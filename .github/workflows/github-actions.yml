@@ -1,0 +1,105 @@
+name: Deploy SAM Application
+
+on:
+  push:
+    branches: [ stage, main ]
+  pull_request:
+    branches: [ stage, main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Run tests with coverage
+      run: npm run test:coverage
+
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+
+    - name: Install Node.js dependencies for NodeLayer
+      run: |
+        cd layers/node
+        npm install
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: Install Python dependencies for PythonLayer
+      run: |
+        cd layers/python
+        # Remove any old build if needed
+        rm -rf python
+        # Create the python folder and install dependencies *there*
+        pip install --target python -r requirements.txt
+
+    - name: Setup SAM
+      uses: aws-actions/setup-sam@v2
+      with:
+        use-installer: true
+
+    - name: Determine environment
+      id: env
+      run: |
+        if [[ ${{ github.ref }} == 'refs/heads/main' ]]; then
+          echo "stack_name=groov-api" >> $GITHUB_OUTPUT
+          echo "env=prod" >> $GITHUB_OUTPUT
+        else
+          echo "stack_name=stage-groov-api" >> $GITHUB_OUTPUT
+          echo "env=stage" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Configure Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-2
+
+    - name: Sam Build
+      run: sam build
+
+    - name: Deploy SAM application
+      run: >
+        sam deploy --stack-name ${{ steps.env.outputs.stack_name }} 
+        --resolve-s3 --capabilities CAPABILITY_IAM 
+        --parameter-overrides 
+        UserPoolId="${{ secrets[format('{0}_USER_POOL_ID', steps.env.outputs.env)] }}" 
+        UserPoolClientId="${{ secrets[format('{0}_COGNITO_CLIENT_ID', steps.env.outputs.env)] }}" 
+        AdminGroup="${{ secrets[format('{0}_ADMIN_GROUP', steps.env.outputs.env)] }}" 
+        TempTableName="${{ secrets[format('{0}_TEMP_TABLE_NAME', steps.env.outputs.env)] }}" 
+        TableName="${{ secrets[format('{0}_TABLE_NAME', steps.env.outputs.env)] }}" 
+        InterAuthKey="${{ secrets[format('{0}_INTER_AUTH_KEY', steps.env.outputs.env)] }}" 
+        Env="${{ steps.env.outputs.env }}" 
+        TurnstileSecretKey="${{ secrets.TURNSTILE_SECRET_KEY }}"
+        FromEmail="${{ secrets.FROM_EMAIL }}"
+        SendToEmail="${{ secrets.SEND_TO_EMAIL }}"
+        R2BucketName="${{ secrets[format('{0}_R2_BUCKET_NAME', steps.env.outputs.env)] }}"
+        R2AccessKeyId="${{ secrets[format('{0}_R2_ACCESS_KEY_ID', steps.env.outputs.env)] }}"
+        R2SecretAccessKey="${{ secrets[format('{0}_R2_SECRET_ACCESS_KEY', steps.env.outputs.env)] }}"
+        R2Endpoint="${{ secrets[format('{0}_R2_ENDPOINT', steps.env.outputs.env)] }}"
+        --no-confirm-changeset --no-fail-on-empty-changeset

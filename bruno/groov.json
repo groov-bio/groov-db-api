@@ -1,0 +1,396 @@
+{
+  "name": "groov",
+  "version": "1",
+  "items": [
+    {
+      "type": "http",
+      "name": "deploy-search",
+      "seq": 15,
+      "request": {
+        "url": "127.0.0.1:3000/search",
+        "method": "GET",
+        "headers": [],
+        "params": [],
+        "body": {
+          "mode": "none",
+          "formUrlEncoded": [],
+          "multipartForm": []
+        },
+        "script": {},
+        "vars": {},
+        "assertions": [],
+        "tests": "",
+        "auth": {
+          "mode": "none"
+        }
+      }
+    },
+    {
+      "type": "http",
+      "name": "local-addnewsensor",
+      "seq": 8,
+      "request": {
+        "url": "127.0.0.1:3000/addNewSensor",
+        "method": "POST",
+        "headers": [],
+        "params": [],
+        "body": {
+          "mode": "json",
+          "json": "{\n \"family\": \"TEMP\",\n \"uniProtID\": \"Q8P3A9\",\n \"about\": {\n  \"about\": \"Regulates the expression of itself and the hepABCD operon, responsible for salicylic acid efflux.\",\n  \"accession\": \"WP_011039231.1\",\n  \"alias\": \"HepR\",\n  \"mechanism\": \"Apo-repressor\"\n },\n \"family\": \"MARR\",\n \"timeSubmit\": 1729896512639,\n \"uniProtID\": \"Q8P3A9\",\n \"user\": \"test\",\n  \"ligands\":{\"data\":[{\"name\":\"Salicylic acid\",\"SMILES\":\"C1=CC=C(C(=C1)C(=O)O)O\",\"doi\":\"https://doi.org/10.1002/mlf2.12140\",\"ref_figure\":\"Figure 6\",\"method\":\"Isothermal titration calorimetry\"}]}\n}",
+          "formUrlEncoded": [],
+          "multipartForm": []
+        },
+        "script": {},
+        "vars": {},
+        "assertions": [],
+        "tests": "",
+        "auth": {
+          "mode": "none"
+        }
+      }
+    },
+    {
+      "type": "http",
+      "name": "local-approveprocessedtemp",
+      "seq": 11,
+      "request": {
+        "url": "127.0.0.1:3000/approveProcessedSensor",
+        "method": "POST",
+        "headers": [],
+        "params": [],
+        "body": {
+          "mode": "json",
+          "json": "{\n  \"uniProtID\": \"Q8P3A9\",\n  \"family\": \"MARR\"\n}",
+          "formUrlEncoded": [],
+          "multipartForm": []
+        },
+        "script": {},
+        "vars": {},
+        "assertions": [],
+        "tests": "",
+        "auth": {
+          "mode": "none"
+        }
+      }
+    },
+    {
+      "type": "http",
+      "name": "local-deletetemp",
+      "seq": 7,
+      "request": {
+        "url": "127.0.0.1:3000/deleteTemp?sensorId=Q8P3A9",
+        "method": "GET",
+        "headers": [],
+        "params": [
+          {
+            "name": "sensorId",
+            "value": "Q8P3A9",
+            "type": "query",
+            "enabled": true
+          }
+        ],
+        "body": {
+          "mode": "none",
+          "formUrlEncoded": [],
+          "multipartForm": []
+        },
+        "script": {},
+        "vars": {},
+        "assertions": [],
+        "tests": "",
+        "auth": {
+          "mode": "none"
+        }
+      }
+    },
+    {
+      "type": "http",
+      "name": "local-deleteTempSensor",
+      "seq": 14,
+      "request": {
+        "url": "127.0.0.1:3000/deleteTemp?sensorId=Q8P3A9",
+        "method": "GET",
+        "headers": [],
+        "params": [
+          {
+            "name": "sensorId",
+            "value": "Q8P3A9",
+            "type": "query",
+            "enabled": true
+          }
+        ],
+        "body": {
+          "mode": "none",
+          "formUrlEncoded": [],
+          "multipartForm": []
+        },
+        "script": {},
+        "vars": {},
+        "assertions": [],
+        "tests": "",
+        "auth": {
+          "mode": "none"
+        }
+      }
+    },
+    {
+      "type": "http",
+      "name": "local-getalltempsensors",
+      "seq": 13,
+      "request": {
+        "url": "127.0.0.1:3000/getAllTempSensors",
+        "method": "GET",
+        "headers": [],
+        "params": [],
+        "body": {
+          "mode": "none",
+          "formUrlEncoded": [],
+          "multipartForm": []
+        },
+        "script": {},
+        "vars": {},
+        "assertions": [],
+        "tests": "",
+        "auth": {
+          "mode": "none"
+        }
+      }
+    },
+    {
+      "type": "http",
+      "name": "local-getfamilypages",
+      "seq": 3,
+      "request": {
+        "url": "127.0.0.1:3000/getPages?family=MARR",
+        "method": "GET",
+        "headers": [],
+        "params": [
+          {
+            "name": "family",
+            "value": "MARR",
+            "type": "query",
+            "enabled": true
+          }
+        ],
+        "body": {
+          "mode": "none",
+          "formUrlEncoded": [],
+          "multipartForm": []
+        },
+        "script": {},
+        "vars": {},
+        "assertions": [],
+        "tests": "",
+        "auth": {
+          "mode": "none"
+        }
+      }
+    },
+    {
+      "type": "http",
+      "name": "local-getoperon",
+      "seq": 9,
+      "request": {
+        "url": "http://127.0.0.1:3000/getOperon?id=WP_011039231.1",
+        "method": "GET",
+        "headers": [],
+        "params": [
+          {
+            "name": "id",
+            "value": "WP_011039231.1",
+            "type": "query",
+            "enabled": true
+          }
+        ],
+        "body": {
+          "mode": "none",
+          "formUrlEncoded": [],
+          "multipartForm": []
+        },
+        "script": {},
+        "vars": {},
+        "assertions": [],
+        "tests": "",
+        "auth": {
+          "mode": "none"
+        }
+      }
+    },
+    {
+      "type": "http",
+      "name": "local-getprocessedtemp",
+      "seq": 10,
+      "request": {
+        "url": "127.0.0.1:3000/getProcessedTemp?sensorID=Q8P3A9&family=MARR",
+        "method": "GET",
+        "headers": [],
+        "params": [
+          {
+            "name": "sensorID",
+            "value": "Q8P3A9",
+            "type": "query",
+            "enabled": true
+          },
+          {
+            "name": "family",
+            "value": "MARR",
+            "type": "query",
+            "enabled": true
+          }
+        ],
+        "body": {
+          "mode": "none",
+          "formUrlEncoded": [],
+          "multipartForm": []
+        },
+        "script": {},
+        "vars": {},
+        "assertions": [],
+        "tests": "",
+        "auth": {
+          "mode": "none"
+        }
+      }
+    },
+    {
+      "type": "http",
+      "name": "local-getsensor",
+      "seq": 4,
+      "request": {
+        "url": "127.0.0.1:3000/getSensor?family=MARR&sensorID=Q8P3A9",
+        "method": "GET",
+        "headers": [],
+        "params": [
+          {
+            "name": "family",
+            "value": "MARR",
+            "type": "query",
+            "enabled": true
+          },
+          {
+            "name": "sensorID",
+            "value": "Q8P3A9",
+            "type": "query",
+            "enabled": true
+          }
+        ],
+        "body": {
+          "mode": "none",
+          "formUrlEncoded": [],
+          "multipartForm": []
+        },
+        "script": {},
+        "vars": {},
+        "assertions": [],
+        "tests": "",
+        "auth": {
+          "mode": "none"
+        }
+      }
+    },
+    {
+      "type": "http",
+      "name": "local-gettempsensor",
+      "seq": 6,
+      "request": {
+        "url": "127.0.0.1:3000/getTempSensor",
+        "method": "GET",
+        "headers": [],
+        "params": [],
+        "body": {
+          "mode": "none",
+          "formUrlEncoded": [],
+          "multipartForm": []
+        },
+        "script": {},
+        "vars": {},
+        "assertions": [],
+        "tests": "",
+        "auth": {
+          "mode": "none"
+        }
+      }
+    },
+    {
+      "type": "http",
+      "name": "local-insertform",
+      "seq": 5,
+      "request": {
+        "url": "127.0.0.1:3000/insertForm",
+        "method": "POST",
+        "headers": [],
+        "params": [],
+        "body": {
+          "mode": "json",
+          "json": "{\n  \"family\": \"MARR\",\n  \"uniProtID\": \"Q8P3A9\",\n  \"about\": {\n    \"about\": \"Regulates the expression of itself and the hepABCD operon, responsible for salicylic acid efflux.\",\n    \"accession\": \"WP_011039231.1\",\n    \"alias\": \"HepR\",\n    \"mechanism\": \"Apo-repressor\"\n  },\n  \"user\": \"test\",\n  \"timeSubmit\": 1729896512639\n}",
+          "formUrlEncoded": [],
+          "multipartForm": []
+        },
+        "script": {},
+        "vars": {},
+        "assertions": [],
+        "tests": "",
+        "auth": {
+          "mode": "none"
+        }
+      }
+    },
+    {
+      "type": "http",
+      "name": "local-rejectprocessedsensor",
+      "seq": 12,
+      "request": {
+        "url": "127.0.0.1:3000/rejectProcessedSensor",
+        "method": "POST",
+        "headers": [],
+        "params": [],
+        "body": {
+          "mode": "json",
+          "json": "{\n  \"uniProtID\": \"Q8P3A9\",\n  \"family\": \"MARR\"\n}",
+          "formUrlEncoded": [],
+          "multipartForm": []
+        },
+        "script": {},
+        "vars": {},
+        "assertions": [],
+        "tests": "",
+        "auth": {
+          "mode": "none"
+        }
+      }
+    },
+    {
+      "type": "http",
+      "name": "local-search",
+      "seq": 2,
+      "request": {
+        "url": "127.0.0.1:3000/search",
+        "method": "GET",
+        "headers": [],
+        "params": [],
+        "body": {
+          "mode": "none",
+          "formUrlEncoded": [],
+          "multipartForm": []
+        },
+        "script": {},
+        "vars": {},
+        "assertions": [],
+        "tests": "",
+        "auth": {
+          "mode": "none"
+        }
+      }
+    }
+  ],
+  "environments": [],
+  "brunoConfig": {
+    "version": "1",
+    "name": "groov",
+    "type": "collection",
+    "ignore": [
+      "node_modules",
+      ".git"
+    ]
+  }
+}

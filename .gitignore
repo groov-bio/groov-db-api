@@ -1,0 +1,14 @@
+**/node_modules
+functions/.env
+**/python/python
+.aws-sam
+.env.json
+**/.env
+**/.DS_Store
+scripts/node_modules
+s3
+env.json
+**/coverage/**
+**/__pycache__/**
+TODO.md
+TODO.json

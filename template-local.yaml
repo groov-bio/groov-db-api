@@ -1,0 +1,601 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Parameters:
+  UserPoolId:
+    Type: String
+  UserPoolClientId:
+    Type: String
+  AdminGroup:
+    Type: String
+  TempTableName:
+    Type: String
+  TableName:
+    Type: String
+  InterAuthKey:
+    Type: String
+  Env:
+    Type: String
+  IsLocal:
+    Type: Boolean
+  SkipTempDelete:
+    Type: Boolean
+  BucketName:
+    Type: String
+  
+Resources:
+  GroovApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: dev
+      CorsConfiguration:
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - X-Amz-Date
+          - Authorization
+          - X-Api-Key
+          - X-Amz-Security-Token
+        AllowOrigins:
+          - "*"
+      AccessLogSettings:
+        DestinationArn: !GetAtt AccessLogs.Arn
+        Format: $context.requestId $context.authorizer.error $context.identity.sourceIp $context.identity.userAgent $context.requestTime $context.httpMethod $context.path $context.protocol $context.status $context.responseLength $context.responseLatency
+
+  NodeLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: shared-node-dependencies
+      Description: Shared Node.js dependencies
+      ContentUri: layers/node/
+      CompatibleRuntimes:
+        - nodejs20.x
+  
+  PythonLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: shared-python-dependencies
+      Description: Shared Node.js dependencies
+      ContentUri: layers/python/
+      CompatibleRuntimes:
+        - python3.12
+  
+  DocsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/docs
+      Handler: docs.handler
+      Runtime: nodejs20.x
+      MemorySize: 256
+      Environment:
+        Variables:
+          STAGE_NAME: dev
+      Events:
+        DocsEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /swagger
+            Method: get
+      Layers:
+        - !Ref NodeLayer
+        
+  AdminAuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/adminAuthorizer
+      Handler: adminAuthorizer.handler
+      Runtime: nodejs20.x
+      Policies:
+        - AWSLambdaBasicExecutionRole
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+          ADMIN_GROUP: !Ref AdminGroup
+          REGION: !Ref AWS::Region
+      Layers:
+        - !Ref NodeLayer
+
+  SearchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/search
+      Handler: search.handler
+      Runtime: nodejs20.x
+      MemorySize: 128
+      Timeout: 20
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+          TEMP_TABLE_NAME: !Ref TempTableName
+          TABLE_NAME: !Ref TableName
+          ENV: !Ref Env
+          IS_LOCAL: !Ref IsLocal
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /search
+            Method: get
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TableName
+      Layers:
+        - !Ref NodeLayer
+
+  GetFamilyPagesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/getFamilyPages
+      Handler: getFamilyPages.handler
+      Runtime: nodejs20.x
+      MemorySize: 128
+      Timeout: 10
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+          TEMP_TABLE_NAME: !Ref TempTableName
+          TABLE_NAME: !Ref TableName
+          ENV: !Ref Env
+          IS_LOCAL: !Ref IsLocal
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /getPages
+            Method: get
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TableName
+      Layers:
+        - !Ref NodeLayer
+        
+  GetSensorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/getSensor
+      Handler: getSensor.handler
+      Runtime: nodejs20.x
+      MemorySize: 128
+      Timeout: 10
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+          TEMP_TABLE_NAME: !Ref TempTableName
+          TABLE_NAME: !Ref TableName
+          ENV: !Ref Env
+          IS_LOCAL: !Ref IsLocal
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /getSensor
+            Method: get
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TableName
+      Layers:
+        - !Ref NodeLayer
+        
+  InsertFormFunction: 
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/insertForm
+      Handler: insertForm.handler
+      Runtime: nodejs20.x
+      MemorySize: 128
+      Timeout: 10
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+          TEMP_TABLE_NAME: !Ref TempTableName
+          TABLE_NAME: !Ref TableName
+          ENV: !Ref Env
+          IS_LOCAL: !Ref IsLocal
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /insertForm
+            Method: post
+      Layers:
+        - !Ref NodeLayer
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TableName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TempTableName
+         
+  GetTempSensorFunction: 
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/getTempSensor
+      Handler: getTempSensor.handler
+      Runtime: nodejs20.x
+      MemorySize: 128
+      Timeout: 10
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+          TEMP_TABLE_NAME: !Ref TempTableName
+          TABLE_NAME: !Ref TableName
+          ENV: !Ref Env
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /getTempSensor
+            Method: get
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TempTableName
+      Layers:
+        - !Ref NodeLayer
+   
+  DeleteTempSensorFunction: 
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/deleteTemp
+      Handler: deleteTemp.handler
+      Runtime: nodejs20.x
+      MemorySize: 128
+      Timeout: 10
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+          TEMP_TABLE_NAME: !Ref TempTableName
+          TABLE_NAME: !Ref TableName
+          ENV: !Ref Env
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /deleteTemp
+            Method: post
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TempTableName
+      Layers:
+        - !Ref NodeLayer
+
+  AddNewSensorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/addNewSensor
+      Handler: addNewSensor.handler
+      Runtime: nodejs20.x
+      MemorySize: 128
+      Timeout: 240
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+          TEMP_TABLE_NAME: !Ref TempTableName
+          TABLE_NAME: !Ref TableName
+          ENV: !Ref Env
+          GET_OPERON_FUNCTION_ARN: !GetAtt GetOperonFunction.Arn
+          IS_LOCAL: !Ref IsLocal
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /addNewSensor
+            Method: post
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        
+        - Statement:
+            - Effect: Allow
+              Action: 
+                - lambda:InvokeFunction
+              Resource: !GetAtt GetOperonFunction.Arn
+
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TempTableName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TableName
+
+      Layers:
+        - !Ref NodeLayer
+
+  GetOperonFunction:      
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/getOperon
+      Handler: getOperon.lambda_handler
+      Runtime: python3.12
+      Timeout: 180
+      MemorySize: 1024
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+          TEMP_TABLE_NAME: !Ref TempTableName
+          TABLE_NAME: !Ref TableName
+          ENV: !Ref Env
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /getOperon
+            Method: get
+      Architectures:
+        - arm64
+      Layers:
+        - !Ref PythonLayer
+        
+  ApproveProcessedSensorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/approveProcessedSensor
+      Handler: approveProcessedSensor.handler
+      Runtime: nodejs20.x
+      MemorySize: 128
+      Timeout: 30
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+          TEMP_TABLE_NAME: !Ref TempTableName
+          TABLE_NAME: !Ref TableName
+          ENV: !Ref Env
+          IS_LOCAL: !Ref IsLocal
+          SKIP_TEMP_DELETE: !Ref SkipTempDelete
+          BUCKET_NAME: !Ref BucketName
+          FINGERPRINT_LAMBDA_NAME: !GetAtt UpdateFingerprintFunction.Arn
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /approveProcessedSensor
+            Method: post
+      Policies: 
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TempTableName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TableName
+        - Statement:
+            - Effect: Allow
+              Action: 
+                - lambda:InvokeFunction
+              Resource: !GetAtt UpdateFingerprintFunction.Arn
+      Layers:
+        - !Ref NodeLayer
+      
+  GetProcessedTempSensor:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/getProcessedTemp
+      Handler: getProcessedTemp.handler
+      Runtime: nodejs20.x
+      MemorySize: 128
+      Timeout: 10
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+          TEMP_TABLE_NAME: !Ref TempTableName
+          TABLE_NAME: !Ref TableName
+          ENV: !Ref Env
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /getProcessedTemp
+            Method: get
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TempTableName
+      Layers:
+        - !Ref NodeLayer
+         
+  RejectProcessedSensor:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/rejectProcessedSensor
+      Handler: rejectProcessedSensor.handler
+      Runtime: nodejs20.x
+      MemorySize: 128
+      Timeout: 10
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+          TEMP_TABLE_NAME: !Ref TempTableName
+          TABLE_NAME: !Ref TableName
+          ENV: !Ref Env
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /rejectProcessedSensor
+            Method: post
+      Policies:  
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TempTableName
+      Layers:
+        - !Ref NodeLayer
+
+  GetAllTempSensors:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/getAllTempSensors
+      Handler: getAllTempSensors.handler
+      Runtime: nodejs20.x
+      MemorySize: 256
+      Timeout: 10
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+          TEMP_TABLE_NAME: !Ref TempTableName
+          TABLE_NAME: !Ref TableName
+          ENV: !Ref Env
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /getAllTempSensors
+            Method: get
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TempTableName
+      Layers:
+        - !Ref NodeLayer
+
+  GetAllProcessedTemp:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/getAllProcessedTemp
+      Handler: getAllProcessedTemp.handler
+      Runtime: nodejs20.x
+      MemorySize: 256
+      Timeout: 10
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+          TEMP_TABLE_NAME: !Ref TempTableName
+          TABLE_NAME: !Ref TableName
+          ENV: !Ref Env
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /getAllProcessedTemp
+            Method: get
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TempTableName
+      Layers:
+        - !Ref NodeLayer
+  
+  AccessLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/http-api/${AWS::StackName}
+      RetentionInDays: 7
+      
+  AdminAuthorizerPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt AdminAuthorizerFunction.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${GroovApi}/*"
+
+  UpdateFingerprintFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/updateFingerprint
+      Handler: updateFingerprint.lambda_handler
+      Runtime: python3.12
+      MemorySize: 512
+      Timeout: 120
+      Environment:
+        Variables:
+          IS_LOCAL: !Ref IsLocal
+          BUCKET_NAME: !Ref BucketName
+          S3_ENDPOINT: "http://host.docker.internal:9090" # Local S3 mock endpoint when running locally
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /updateFingerprint
+            Method: post
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+              Resource: !Sub "arn:${AWS::Partition}:s3:::${BucketName}/*"
+      Layers:
+        - !Ref PythonLayer
+
+  LigandSearchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/ligandSearch
+      Handler: ligandSearch.lambda_handler
+      Runtime: python3.12
+      MemorySize: 512
+      Timeout: 120
+      Environment:
+        Variables:
+          IS_LOCAL: !Ref IsLocal
+          BUCKET_NAME: !Ref BucketName
+          S3_ENDPOINT: "http://host.docker.internal:9090" # Local S3 mock endpoint when running locally
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /ligandSearch
+            Method: post
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource: !Sub "arn:${AWS::Partition}:s3:::${BucketName}/*"
+      Layers:
+        - !Ref PythonLayer
+
+Globals:
+  Function:
+    LoggingConfig:
+      LogFormat: JSON

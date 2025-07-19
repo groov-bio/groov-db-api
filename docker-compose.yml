@@ -1,0 +1,26 @@
+version: '3.8'
+services:
+  dynamodb-local:
+    image: amazon/dynamodb-local
+    container_name: dynamodb-local
+    ports:
+      - "8000:8000"
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath /home/dynamodblocal"
+    volumes:
+      - dynamodb-data:/home/dynamodblocal
+    working_dir: /home/dynamodblocal
+
+  s3-local:
+    image: adobe/s3mock
+    container_name: s3-local
+    ports:
+      - "9090:9090"
+    environment:
+      - initialBuckets=my-test-bucket
+      - debug=true
+    volumes:
+      - s3-data:/s3mockdata
+
+volumes:
+  dynamodb-data:
+  s3-data: 

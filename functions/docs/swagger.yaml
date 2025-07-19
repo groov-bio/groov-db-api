@@ -1,0 +1,901 @@
+openapi: 3.0.1
+info:
+  title: Groov API
+  description: API for managing sensors and related data
+  version: 1.0.0
+servers:
+  - url: https://groov-api.com
+    description: Static content API
+  - url: /
+    description: Main API endpoints
+tags:
+  - name: Static Content API
+    description: Read-only endpoints served from groov-api.com for sensor data and indexes
+  - name: Sensor Management
+    description: Dynamic endpoints for submitting and managing sensor data
+  - name: Admin Functions
+    description: Administrative endpoints for processing and approving sensors
+paths:
+  /index.json:
+    get:
+      tags:
+        - Static Content API
+      servers:
+        - url: https://groov-api.com
+      summary: All sensor search
+      description: Retrieve a list of all sensors
+      responses:
+        "200":
+          description: A list of all sensors in the database with their ligands
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/searchEntry'
+        "422":
+          description: An error occurred while processing ligands set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "500":
+          description: An unexpected error occurred
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "503":
+          description: The database is not available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  /indexes/{family}.json:
+    get:
+      tags:
+        - Static Content API
+      servers:
+        - url: https://groov-api.com
+      summary: Page for a sensor family
+      description: Retrieve a list of sensors for a specific family
+      parameters:
+        - name: family
+          in: path
+          description: Family name to filter sensors by
+          required: true
+          schema:
+            type: string
+            enum: [
+              "tetr",
+              "lysr",
+              "arac",
+              "marr",
+              "laci",
+              "gntr",
+              "luxr",
+              "iclr",
+              "other"
+            ]
+            example: "tetr"
+      responses:
+        "200":
+          description: A list of sensors for the specified family
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/familyResponse'
+        "400":
+          description: Invalid or missing family name provided
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "410":
+          description: Query for family failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "500":
+          description: Data formatting error occured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  /sensors/{family}/{sensorID}.json:
+    get:
+      tags:
+        - Static Content API
+      servers:
+        - url: https://groov-api.com
+      summary: Retrieve a particular sensor
+      description: Retrieve detailed information about a specific sensor
+      parameters:
+        - name: sensorID
+          in: path
+          description: Uniprot ID of the sensor to retrieve (uppercase)
+          required: true
+          schema:
+            type: string
+            example: "O34835"
+        - name: family
+          in: path
+          description: Family name (lowercase)
+          required: true
+          schema:
+            type: string
+            enum: [
+              "tetr",
+              "lysr",
+              "arac",
+              "marr",
+              "laci",
+              "gntr",
+              "luxr",
+              "iclr",
+              "other"
+            ]
+            example: "arac"
+      responses:
+        "200":
+          description: Detailed information about the specified sensor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/sensor' 
+        "404":
+          description: Sensor not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "422":
+          description: An error occurred while processing the sensor data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "500":
+          description: An unexpected error occurred
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "503":
+          description: The database is not available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  /all-sensors.json:
+    get:
+      tags:
+        - Static Content API
+      servers:
+        - url: https://groov-api.com
+      summary: Download all sensors data
+      description: Retrieve complete data for all sensors in the database
+      responses:
+        "200":
+          description: Complete data for all sensors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/sensor'
+        "500":
+          description: An unexpected error occurred
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "503":
+          description: The database is not available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  /insertForm:
+    post:
+      tags:
+        - Sensor Management
+      servers:
+        - url: /
+      summary: Insert a proposed sensor into the system
+      description: Proposed sensor data to be inserted into the system
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/sensorInput'
+      responses:
+        "202":
+          description: Sensor data successfully inserted
+        "400":
+          description: Invalid or missing sensor data provided
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "409":
+          description: Sensor already exists within system
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "500":
+          description: An unexpected error occurred
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  /getTempSensor:
+    get:
+      tags:
+        - Admin Functions
+      servers:
+        - url: /
+      summary: Retrieve a temporary sensor
+      description: Retrieve detailed information about a temporary sensor
+      security:
+        - adminAuth: []
+      responses:
+        "200":
+          description: Detailed information about the specified temporary sensor
+          content:
+            application/json:
+              schema:
+              $ref: '#/components/schemas/sensorInput' 
+        "400":
+          description: Sensor not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  /deleteTemp:
+    get:
+      tags:
+        - Admin Functions
+      servers:
+        - url: /
+      summary: Delete a temporary sensor
+      description: Delete temporary sensor due to system incompatibility
+      security:
+        - adminAuth: []
+      responses:
+        "202":
+          description: Detailed information about the specified temporary sensor
+        "500":
+          description: Logged error
+  /addNewSensor:
+    post:
+      tags:
+        - Admin Functions
+      servers:
+        - url: /
+      summary: Run submitted sensor through data pipeline
+      description: Run submitted sensor through data pipeline
+      security:
+        - adminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/sensorInput' 
+      responses:
+        "202":
+          description: Sensor data successfully processed
+        "400":
+          description: Validation error or dependent API failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "409":
+          description: Sensor already exists within system
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "500":
+          description: An unexpected error occurred
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  /approveProcessedSensor:
+    post:
+      tags:
+        - Admin Functions
+      servers:
+        - url: /
+      summary: Sensor promotion
+      description: Approve processed sensor to be added to production
+      security:
+        - adminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/approveSensorInput' 
+      responses:
+        "200":
+          description: Sensor data successfully approved
+        "202":
+          description: Sensor data successfully approved but temp result still remains
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "500":
+          description: Error moving sensor from temp to production
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  
+  /getProcessedTempSensor:
+    get:
+      tags:
+        - Admin Functions
+      servers:
+        - url: /
+      summary: Retrieve a processed temporary sensor
+      description: Retrieve detailed information about a processed temporary sensor
+      security:
+        - adminAuth: []
+      parameters:
+        - name: family
+          in: query
+          description: Family name to filter sensors by
+          required: true
+          schema:
+            type: string
+            enum: [
+              "TETR",
+              "LYSR",
+              "ARAC",
+              "MARR",
+              "LACI",
+              "GNTR",
+              "LUXR",
+              "ICLR",
+              "OTHER"
+            ]
+            example: "TETR"
+        - name: sensorID
+          in: query
+          description: Uniprot ID of the sensor to retrieve
+          required: true
+          schema:
+            type: string
+            example: "O34835"
+      responses:
+        "200":
+          description: Detailed information about the specified processed temporary sensor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/sensor' 
+        "400":
+          description: Sensor not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  /rejectProcessedSensor:
+    get:
+      tags:
+        - Admin Functions
+      servers:
+        - url: /
+      summary: Reject a processed temporary sensor
+      description: Reject a processed temporary sensor due to system incompatibility
+      security:
+        - adminAuth: []
+      parameters:
+        - name: family
+          in: query
+          description: Family name to filter sensors by
+          required: true
+          schema:
+            type: string
+            enum: [
+              "TETR",
+              "LYSR",
+              "ARAC",
+              "MARR",
+              "LACI",
+              "GNTR",
+              "LUXR",
+              "ICLR",
+              "OTHER"
+            ]
+            example: "TETR"
+        - name: sensorID
+          in: query
+          description: Uniprot ID of the sensor to retrieve
+          required: true
+          schema:
+            type: string
+            example: "O34835"
+      responses:
+        "200":
+          description: Sensor data successfully rejected
+        "500":
+          description: Error rejecting sensor from production
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  /getAllTempSensors:
+    get:
+      tags:
+        - Admin Functions
+      servers:
+        - url: /
+      summary: Retrieve all temporary sensors
+      description: Retrieve detailed information about all temporary sensors
+      security:
+        - adminAuth: []
+      responses:
+        "200":
+          description: Detailed information about all temporary sensors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/sensorInput'
+        "400":
+          description: An error occurred getting all temporary sensors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  /getAllProcessedTemp:
+    get:
+      tags:
+        - Admin Functions
+      servers:
+        - url: /
+      summary: Retrieve all processed temporary sensors
+      description: Retrieve detailed information about all processed temporary sensors
+      security:
+        - adminAuth: []
+      responses:
+        "200":
+          description: Detailed information about all processed temporary sensors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/sensor'
+        "400":
+          description: An error occurred getting all processed temporary sensors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+components:
+  schemas:
+    sensor:
+      type: object
+      properties:
+        about:
+          type: string
+          description: User provided description of the sensor
+        accession:
+          type: string
+          description: The accession number of the sensor
+        alias:
+          type: string
+          description: The alias of the sensor
+        family:
+          type: string
+          description: The family of the sensor
+        fullReferences:
+          type: array
+          items:
+            $ref: '#/components/schemas/fullReferenceEntry'
+          description: A list of full DOI references for the sensor
+        keggID:
+          type: string
+          description: The KEGG ID of the sensor
+        ligands:
+          type: array
+          items:
+            $ref: '#/components/schemas/ligandEntry'
+          description: A list of ligands associated with the sensor
+        name:
+          type: string
+          description: The name of the sensor
+        newOperon:
+          type: object
+          description: The operon information for the sensor
+          properties:
+            genome:
+              type: string
+              description: The genome associated with the operon
+            regIndex:
+              type: integer
+              description: The index of the regulator in the operon
+            operon:
+              type: array
+              items:
+                $ref: '#/components/schemas/operonEntry'
+        operators:
+          type: array
+          items:
+            $ref: '#/components/schemas/operatorEntry'
+          description: A list of operators associated with the sensor
+        organism:
+          type: string
+          description: The organism associated with the sensor
+        organismID:
+          type: interger
+          description: The organism ID associated with the sensor
+        regulationType:
+          type: string
+          description: The type of regulation (e.g., "Co-Activator")
+        sequence:
+          type: string
+          description: The sequence of the sensor
+        structures:
+          type: array
+          items:
+            type: string
+          description: A list of structures associated with the sensor
+        uniprotID:
+          type: string
+          description: The UniProt ID of the sensor
+    operatorEntry:
+      type: object
+      properties:
+        doi:
+          type: string
+          description: The DOI of the operator reference
+        fullDoi:
+          $ref: '#/components/schemas/fullReferenceEntry'
+        method:
+          type: string
+          description: The method used to describe the operator
+        ref_figure:
+          type: string
+          description: The figure number in the reference where the operator is described
+        sequence:
+          type: string
+          description: The DNA sequence of the operator
+    operonEntry:
+      type: object
+      properties:
+        alias:
+          type: string
+          description: The alias of the operon
+        description:
+          type: string
+          description: A description of the operon
+        direction:
+          type: string
+          description: The direction of the operon (e.g., "-" or "+")
+        # TODO: What is the source of the link here?
+        link:
+          type: string
+          description: Operon Link ID
+        start:
+          type: integer
+          description: The start position of the operon
+        stop:
+          type: integer
+          description: The stop position of the operon
+    ligandEntry:
+      type: object
+      properties:
+        SMILES:
+          type: string
+          description: The SMILES representation of the ligand
+        doi:
+          type: string
+          description: The DOI of the ligand reference
+        fullDoi:
+          $ref: '#/components/schemas/fullReferenceEntry'
+        method:
+          type: string
+          description: The method used to describe the ligand
+        name:
+          type: string
+          description: The name of the ligand
+        ref_figure:
+          type: string
+        description: The figure number in the reference where the ligand is described
+    authorsEntry:
+      type: object
+      properties:
+        firstName:
+          type: string
+          description: The first name of the author
+        lastName:
+          type: string
+          description: The last name of the author
+    interactionEntry:
+      type: object
+      properties:
+        figure:
+          type: string
+          description: The figure number in the reference where the interaction is described
+        method:
+          type: string
+          description: The method used to describe the interaction
+        type:
+          type: string
+          description: The type of interaction (e.g., Ligand)
+    fullReferenceEntry:
+      type: object
+      properties:
+        authors:
+          type: array
+          items:
+            $ref: '#/components/schemas/authorsEntry'
+          description: A list of authors for the reference
+        doi:
+          type: string
+          description: The DOI of the reference
+        interaction:
+          type: array
+          items:
+            $ref: '#/components/schemas/interactionEntry'
+          description: A list of interactions associated with the reference
+        journal:
+          type: string
+          description: The journal where the reference was published
+        title:
+          type: string
+          description: The title of the reference
+        year:
+          type: integer
+          description: The year the reference was published
+        url:
+          type: string
+          description: The URL of the reference
+    searchEntry:
+      type: object
+      properties:
+        alias:
+          type: string
+          description: The alias of the sensor
+        family:
+          type: string
+          description: The family of the sensor
+        ligands:
+          type: array
+          items:
+            type: string
+          description: A list of ligands associated with the sensor
+    familyEntry:
+      type: object
+      properties:
+        accession:
+          type: string
+          description: The accession number of the sensor
+        alias:
+          type: string
+          description: The alias of the sensor
+        keggID:
+          type: string
+          description: The KEGG ID of the sensor
+        organism:
+          type: string
+          description: The organism associated with the sensor
+        uniprotID:
+          type: string
+          description: The UniProt ID of the sensor
+        ligands:
+          type: array
+          items:
+            type: string
+          description: A list of ligands associated with the sensor
+    familyResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: The number of sensors in the family
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/familyEntry'
+    sensorInput:
+      type: object
+      properties:
+        unitProtID:
+          type: string
+          description: The UniProt ID of the sensor
+          pattern: '^[A-Za-z0-9_]'
+        family:
+          type: string
+          description: The family of the sensor
+          enum: [
+            "TETR",
+            "LYSR",
+            "ARAC",
+            "MARR",
+            "LACI",
+            "GNTR",
+            "LUXR",
+            "ICLR",
+            "OTHER"
+          ]
+          example: "TETR"
+        about:
+          ref: '#/components/schemas/aboutNewSensor'
+        operator:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/operatorNewSensor'
+        ligands:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/ligandNewSensor'
+        user:
+          type: string
+          description: The user who proposed the sensor
+        timeSubmit:
+          type: integer
+          description: The timestamp the sensor was submitted
+          example: 1743336304
+    lineageEntry:
+      type: object
+      properties:
+        child_id:
+          type: string
+          description: To be used in the future
+          nullable: true
+        mutation:
+          type: string
+          description: To be used in the future
+          nullable: true
+        parent_id:
+          type: string
+          description: To be used in the future
+          nullable: true
+        doi: 
+          type: string
+          description: The DOI of the lineage reference
+          nullable: true
+    ligandNewSensor:
+      type: object
+      properties:
+        doi:
+          type: string
+          description: The DOI of the ligand reference
+        method:
+          type: string
+          description: The method used to describe the ligand
+          enum: [
+            "EMSA",
+            "DNAse footprinting",
+            "Isothermal titration calorimetry",
+            "Flourescence polarization",
+            "Surface plasmon resonance",
+            "Sythentic regulation"
+          ]
+          example: "EMSA"
+        ref_figure:
+          type: string
+          description: The figure number in the reference where the ligand is described
+          pattern: '^(Figure|Table) [S]?[1-9]?[0-9A-Za-z]?$'
+        name:
+          type: string
+          description: The name of the ligand
+          maxLength: 64
+        SMILES:
+          type: string
+          description: The SMILES representation of the ligand
+    operatorNewSensor:
+      type: object
+      properties:
+        doi:
+          type: string
+          description: The DOI of the operator reference
+        method:
+          type: string
+          description: The method used to describe the operator
+          enum: [
+            "EMSA",
+            "DNAse footprinting",
+            "Crystal structure",
+            "Isothermal titration calorimetry",
+            "Flourescence polarization",
+            "Surface plasmon resonance",
+            "Sythentic regulation"
+          ]
+          example: "EMSA"
+        ref_figure:
+          type: string
+          description: The figure number in the reference where the operator is described
+          pattern: '^(Figure|Table) [S]?[1-9]?[0-9A-Za-z]?$'
+        sequence:
+          type: string
+          description: The DNA sequence of the operator
+          pattern: '[ATCGatcg]'
+          maxLength: 512
+    aboutNewSensor:
+      type: object
+      properties:
+        about:
+          type: string
+          description: User provided description of the sensor
+        accession:
+          type: string
+          description: The accession number of the sensor
+          pattern: '[A-Za-z_]'
+        alias:
+          type: string
+          description: The alias of the sensor
+          pattern: '[A-Za-z]'
+        mechanism:
+          type: string
+          description: The mechanism of the sensor
+          enum: [
+            "Co-activator",
+            "Co-repressor",
+            "Apo-activator",
+            "Apo-repressor",
+          ]
+          example: "Co-activator"
+    approveSensorInput:
+      type: object
+      properties:
+        unitProtID:
+          type: string
+          description: The ID of the sensor to be approved
+          pattern: '^[A-Za-z0-9_]'
+        family:
+          type: string
+          description: The family of the sensor
+          enum: [
+            "TETR",
+            "LYSR",
+            "ARAC",
+            "MARR",
+            "LACI",
+            "GNTR",
+            "LUXR",
+            "ICLR",
+            "OTHER"
+          ]
+          example: "TETR"
+    ErrorMessage:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Error message describing what went wrong
+      required:
+        - message
+  securitySchemes:
+    adminAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Cognito JWT token with Admin permissions required for authentication
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Cognito JWT token required for authentication
+      DefinitionUri: swagger.yaml
