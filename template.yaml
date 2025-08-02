@@ -610,6 +610,7 @@ Resources:
       Runtime: python3.12
       MemorySize: 512
       Timeout: 120
+      FunctionName: !Sub ${Env}-update-fingerprint-function
       Environment:
         Variables:
           USER_POOL_ID: !Ref UserPoolId
@@ -647,6 +648,7 @@ Resources:
       Runtime: python3.12
       MemorySize: 512
       Timeout: 120
+      FunctionName: !Sub ${Env}-ligand-search-function
       Environment:
         Variables:
           USER_POOL_ID: !Ref UserPoolId
