@@ -74,21 +74,26 @@ def download_ligify_fingerprints():
             fingerprints_data = json.load(f)
                 
         # Convert stored bit strings back to fingerprint objects
-        # Format: [bit_string, ligand_id, regulator_id, ligand_name]
+        # Format: [bit_string, ligand_id, regulator_id, ligand_name, smiles]
         fingerprints = []
         for i, item in enumerate(fingerprints_data):
             try:
-                if len(item) == 4:
+                if len(item) == 5:
+                    bit_string, ligand_id, regulator_id, ligand_name, smiles = item
+                elif len(item) == 4:
+                    # Handle legacy format without SMILES
                     bit_string, ligand_id, regulator_id, ligand_name = item
-                    # Create ExplicitBitVect from the binary string
-                    fp = ExplicitBitVect(len(bit_string))
-                    for j, bit in enumerate(bit_string):
-                        if bit == '1':
-                            fp.SetBit(j)
-                    fingerprints.append((fp, ligand_id, regulator_id, ligand_name))
+                    smiles = None
                 else:
                     logger.warning(f"Unexpected item format at index {i}: {len(item)} elements")
                     continue
+                    
+                # Create ExplicitBitVect from the binary string
+                fp = ExplicitBitVect(len(bit_string))
+                for j, bit in enumerate(bit_string):
+                    if bit == '1':
+                        fp.SetBit(j)
+                fingerprints.append((fp, ligand_id, regulator_id, ligand_name, smiles))
                     
             except Exception as item_error:
                 logger.error(f"Error processing item {i}: {item_error}")
@@ -120,7 +125,7 @@ def search_similar_ligands(query_smiles, threshold=0.7, max_results=50):
         # Calculate similarity scores
         results = []
         for i, item in enumerate(fingerprints):
-            fp, ligand_id, regulator_id, ligand_name = item
+            fp, ligand_id, regulator_id, ligand_name, smiles = item
                 
             try:
                 similarity = TanimotoSimilarity(query_fp, fp)
@@ -130,7 +135,8 @@ def search_similar_ligands(query_smiles, threshold=0.7, max_results=50):
                         'ligandId': ligand_id,
                         'regulatorId': regulator_id,
                         'similarity': similarity,
-                        'name': ligand_name
+                        'name': ligand_name,
+                        'smiles': smiles
                     })
             except Exception as sim_error:
                 logger.error(f"Error calculating similarity for item {i}: {sim_error}")
