@@ -688,6 +688,55 @@ Resources:
               Resource: !Sub "arn:${AWS::Partition}:s3:::${R2BucketName}/*"
       Layers:
         - !Ref PythonLayer
+
+  LigifyLigandSearchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/ligifyLigandSearch
+      Handler: ligifyLigandSearch.lambda_handler
+      Runtime: python3.12
+      MemorySize: 512
+      Timeout: 120
+      FunctionName: !Sub ${Env}-ligify-ligand-search-function
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+          TEMP_TABLE_NAME: !Ref TempTableName
+          TABLE_NAME: !Ref TableName
+          ENV: !Ref Env
+          R2_BUCKET_NAME: !Ref R2BucketName
+          R2_ACCESS_KEY_ID: !Ref R2AccessKeyId
+          R2_SECRET_ACCESS_KEY: !Ref R2SecretAccessKey
+          R2_ENDPOINT: !Ref R2Endpoint
+      Architectures:
+        - x86_64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /ligifyLigandSearch
+            Method: post
+        OptionsApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /ligifyLigandSearch
+            Method: options
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource: !Sub "arn:${AWS::Partition}:s3:::${R2BucketName}/*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource: !Sub "arn:${AWS::Partition}:s3:::${R2BucketName}/*"
+      Layers:
+        - !Ref PythonLayer
   
   AccessLogs:
     Type: AWS::Logs::LogGroup
