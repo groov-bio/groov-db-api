@@ -38,7 +38,9 @@ morgan_generator = rdFingerprintGenerator.GetMorganGenerator(
 allowed_origins = [
     'http://localhost:3000',
     'https://groov.bio',
-    'https://www.groov.bio'
+    'https://www.groov.bio',
+    'https://ligify.groov.bio',
+    'https://www.ligify.groov.bio'
 ]
 
 def get_cors_headers(event):

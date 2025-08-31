@@ -13,7 +13,9 @@ const contactSchema = Joi.object({
 const allowedOrigins = [
   'http://localhost:3000',
   'https://groov.bio',
-  'https://www.groov.bio'
+  'https://www.groov.bio',
+  'https://ligify.groov.bio',
+  'https://www.ligify.groov.bio'
 ];
 
 // Function to get CORS headers based on the request origin
