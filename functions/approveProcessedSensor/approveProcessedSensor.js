@@ -141,6 +141,7 @@ const writeBatch = async (batch, table) => {
         await docClient.send(command);
     } catch (err) {
         console.log('Write error to DynamoDB:')
+        console.log(err);
         throw new Error();
     }
 };
