@@ -339,7 +339,7 @@ Resources:
       Handler: getOperon.lambda_handler
       Runtime: python3.12
       Timeout: 180
-      MemorySize: 1024
+      MemorySize: 2048
       FunctionName: !Sub ${Env}-get-operon-function
       Environment:
         Variables:
