@@ -403,10 +403,11 @@ const constructField = async (type, newSensor, family, id) => {
       };
     }
     case "structure": {
+      const wrappedStructure = newSensor?.data ? { data: { data: newSensor.data } } : null;
       return {
         PK: family.toUpperCase(),
         SK: `${id}#STRUCTURE`,
-        data: await loopObject(newSensor, 'structure'), //TODO - walk for doi data
+        data: await loopObject(wrappedStructure, 'structure'),
         category: "structure",
       };
     }
