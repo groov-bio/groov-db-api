@@ -738,6 +738,33 @@ Resources:
       Layers:
         - !Ref PythonLayer
   
+  LigifyBlastFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      MemorySize: 1024
+      Timeout: 120
+      FunctionName: !Sub ${Env}-ligify-blast-function
+      Architectures:
+        - x86_64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /ligifyBlast
+            Method: post
+        OptionsApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /ligifyBlast
+            Method: options
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./functions/ligifyBlast
+      DockerTag: latest
+
   AccessLogs:
     Type: AWS::Logs::LogGroup
     Properties:
