@@ -9,14 +9,14 @@ const docClientMock = mockClient(DynamoDBDocumentClient);
 const mockUpdateMainIndex = jest.fn();
 const mockUpdateFamilyIndex = jest.fn();
 const mockSaveSensorFile = jest.fn();
-const mockUpdateAllSensorsGzip = jest.fn();
+const mockUpdateAllSensors = jest.fn();
 const mockUpdateFingerprints = jest.fn();
 
 jest.unstable_mockModule('../../functions/approveProcessedSensor/s3Updater.js', () => ({
   updateMainIndex: mockUpdateMainIndex,
   updateFamilyIndex: mockUpdateFamilyIndex,
   saveSensorFile: mockSaveSensorFile,
-  updateAllSensorsGzip: mockUpdateAllSensorsGzip,
+  updateAllSensors: mockUpdateAllSensors,
   updateFingerprints: mockUpdateFingerprints
 }));
 
@@ -41,7 +41,7 @@ describe('ApproveProcessedSensor Function', () => {
     mockUpdateMainIndex.mockReset();
     mockUpdateFamilyIndex.mockReset();
     mockSaveSensorFile.mockReset();
-    mockUpdateAllSensorsGzip.mockReset();
+    mockUpdateAllSensors.mockReset();
     mockUpdateFingerprints.mockReset();
     
     process.env.TABLE_NAME = 'test-prod-table';
@@ -145,7 +145,7 @@ describe('ApproveProcessedSensor Function', () => {
       mockUpdateMainIndex.mockResolvedValue(true);
       mockUpdateFamilyIndex.mockResolvedValue(true);
       mockSaveSensorFile.mockResolvedValue(true);
-      mockUpdateAllSensorsGzip.mockResolvedValue(true);
+      mockUpdateAllSensors.mockResolvedValue(true);
       mockUpdateFingerprints.mockResolvedValue(true);
 
       const event = {
@@ -164,7 +164,7 @@ describe('ApproveProcessedSensor Function', () => {
       mockUpdateMainIndex.mockResolvedValue(true);
       mockUpdateFamilyIndex.mockResolvedValue(true);
       mockSaveSensorFile.mockResolvedValue(true);
-      mockUpdateAllSensorsGzip.mockResolvedValue(true);
+      mockUpdateAllSensors.mockResolvedValue(true);
       mockUpdateFingerprints.mockResolvedValue(true);
 
       const event = {
@@ -240,7 +240,7 @@ describe('ApproveProcessedSensor Function', () => {
       mockUpdateMainIndex.mockResolvedValue(true);
       mockUpdateFamilyIndex.mockResolvedValue(true);
       mockSaveSensorFile.mockResolvedValue(true);
-      mockUpdateAllSensorsGzip.mockResolvedValue(true);
+      mockUpdateAllSensors.mockResolvedValue(true);
       mockUpdateFingerprints.mockResolvedValue(true);
 
       const event = {
@@ -285,7 +285,7 @@ describe('ApproveProcessedSensor Function', () => {
       mockUpdateMainIndex.mockRejectedValue(new Error('S3 update failed'));
       mockUpdateFamilyIndex.mockResolvedValue(true);
       mockSaveSensorFile.mockResolvedValue(true);
-      mockUpdateAllSensorsGzip.mockResolvedValue(true);
+      mockUpdateAllSensors.mockResolvedValue(true);
       mockUpdateFingerprints.mockResolvedValue(true);
 
       const event = {
@@ -305,7 +305,7 @@ describe('ApproveProcessedSensor Function', () => {
       mockUpdateMainIndex.mockResolvedValue(true);
       mockUpdateFamilyIndex.mockResolvedValue(true);
       mockSaveSensorFile.mockResolvedValue(true);
-      mockUpdateAllSensorsGzip.mockResolvedValue(true);
+      mockUpdateAllSensors.mockResolvedValue(true);
       mockUpdateFingerprints.mockResolvedValue(false);
 
       const event = {
@@ -326,7 +326,7 @@ describe('ApproveProcessedSensor Function', () => {
       mockUpdateMainIndex.mockRejectedValue(new Error('S3 update failed'));
       mockUpdateFamilyIndex.mockResolvedValue(true);
       mockSaveSensorFile.mockResolvedValue(true);
-      mockUpdateAllSensorsGzip.mockResolvedValue(true);
+      mockUpdateAllSensors.mockResolvedValue(true);
       mockUpdateFingerprints.mockResolvedValue(true);
 
       const event = {
@@ -349,7 +349,7 @@ describe('ApproveProcessedSensor Function', () => {
       mockUpdateMainIndex.mockResolvedValue(true);
       mockUpdateFamilyIndex.mockResolvedValue(true);
       mockSaveSensorFile.mockResolvedValue(true);
-      mockUpdateAllSensorsGzip.mockResolvedValue(true);
+      mockUpdateAllSensors.mockResolvedValue(true);
       mockUpdateFingerprints.mockResolvedValue(true);
 
       const event = {
@@ -382,7 +382,7 @@ describe('ApproveProcessedSensor Function', () => {
       expect(mockUpdateMainIndex).toHaveBeenCalledWith(expect.any(Object), 'GPCR');
       expect(mockUpdateFamilyIndex).toHaveBeenCalledWith(expect.any(Object), 'GPCR');
       expect(mockSaveSensorFile).toHaveBeenCalledWith(expect.any(Object), 'GPCR');
-      expect(mockUpdateAllSensorsGzip).toHaveBeenCalledWith(expect.any(Object), 'GPCR');
+      expect(mockUpdateAllSensors).toHaveBeenCalledWith(expect.any(Object));
       expect(mockUpdateFingerprints).toHaveBeenCalledWith(expect.any(Object), 'GPCR');
     });
 
@@ -394,7 +394,7 @@ describe('ApproveProcessedSensor Function', () => {
       mockUpdateMainIndex.mockResolvedValue(true);
       mockUpdateFamilyIndex.mockResolvedValue(true);
       mockSaveSensorFile.mockResolvedValue(true);
-      mockUpdateAllSensorsGzip.mockResolvedValue(true);
+      mockUpdateAllSensors.mockResolvedValue(true);
       mockUpdateFingerprints.mockResolvedValue(true);
 
       const event = {
@@ -428,7 +428,7 @@ describe('ApproveProcessedSensor Function', () => {
       mockUpdateMainIndex.mockResolvedValue(true);
       mockUpdateFamilyIndex.mockResolvedValue(true);
       mockSaveSensorFile.mockResolvedValue(true);
-      mockUpdateAllSensorsGzip.mockResolvedValue(true);
+      mockUpdateAllSensors.mockResolvedValue(true);
       mockUpdateFingerprints.mockResolvedValue(true);
 
       const event = {
@@ -479,7 +479,7 @@ describe('ApproveProcessedSensor Function', () => {
       mockUpdateMainIndex.mockResolvedValue(true);
       mockUpdateFamilyIndex.mockResolvedValue(true);
       mockSaveSensorFile.mockResolvedValue(true);
-      mockUpdateAllSensorsGzip.mockResolvedValue(true);
+      mockUpdateAllSensors.mockResolvedValue(true);
       mockUpdateFingerprints.mockResolvedValue(true);
 
       const event = {
@@ -510,7 +510,7 @@ describe('ApproveProcessedSensor Function', () => {
       mockUpdateMainIndex.mockResolvedValue(true);
       mockUpdateFamilyIndex.mockResolvedValue(true);
       mockSaveSensorFile.mockResolvedValue(true);
-      mockUpdateAllSensorsGzip.mockResolvedValue(true);
+      mockUpdateAllSensors.mockResolvedValue(true);
       mockUpdateFingerprints.mockResolvedValue(true);
 
       const event = {
@@ -559,7 +559,7 @@ describe('ApproveProcessedSensor Function', () => {
       mockUpdateMainIndex.mockResolvedValue(true);
       mockUpdateFamilyIndex.mockResolvedValue(true);
       mockSaveSensorFile.mockResolvedValue(true);
-      mockUpdateAllSensorsGzip.mockResolvedValue(true);
+      mockUpdateAllSensors.mockResolvedValue(true);
       mockUpdateFingerprints.mockResolvedValue(true);
 
       const event = {
@@ -630,7 +630,7 @@ describe('ApproveProcessedSensor Function', () => {
       mockUpdateMainIndex.mockResolvedValue(true);
       mockUpdateFamilyIndex.mockResolvedValue(true);
       mockSaveSensorFile.mockResolvedValue(true);
-      mockUpdateAllSensorsGzip.mockResolvedValue(true);
+      mockUpdateAllSensors.mockResolvedValue(true);
       mockUpdateFingerprints.mockResolvedValue(true);
 
       const event = {
@@ -691,7 +691,7 @@ describe('ApproveProcessedSensor Function', () => {
       mockUpdateMainIndex.mockResolvedValue(true);
       mockUpdateFamilyIndex.mockResolvedValue(true);
       mockSaveSensorFile.mockResolvedValue(true);
-      mockUpdateAllSensorsGzip.mockResolvedValue(true);
+      mockUpdateAllSensors.mockResolvedValue(true);
       mockUpdateFingerprints.mockResolvedValue(true);
 
       const event = {
@@ -752,7 +752,7 @@ describe('ApproveProcessedSensor Function', () => {
       mockUpdateMainIndex.mockResolvedValue(true);
       mockUpdateFamilyIndex.mockResolvedValue(true);
       mockSaveSensorFile.mockResolvedValue(true);
-      mockUpdateAllSensorsGzip.mockResolvedValue(true);
+      mockUpdateAllSensors.mockResolvedValue(true);
       mockUpdateFingerprints.mockResolvedValue(true);
 
       const event = {
