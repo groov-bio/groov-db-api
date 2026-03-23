@@ -925,7 +925,7 @@ describe('AddNewSensor Function', () => {
       expect(result.statusCode).toBe(202);
       
       expect(mockFetch).toHaveBeenCalledTimes(2);
-      expect(mockCiteConstructor).toHaveBeenCalledTimes(2);
+      expect(mockCiteConstructor).toHaveBeenCalledTimes(3);
       expect(mockInvokeLambda).toHaveBeenCalledTimes(1);
       
       expect(docClientMock.commandCalls(GetCommand).length).toBe(2);

@@ -85,8 +85,8 @@ jobs:
 
     - name: Deploy SAM application
       run: >
-        sam deploy --stack-name ${{ steps.env.outputs.stack_name }} 
-        --resolve-s3 --capabilities CAPABILITY_IAM 
+        sam deploy --stack-name ${{ steps.env.outputs.stack_name }}
+        --resolve-s3 --resolve-image-repos --capabilities CAPABILITY_IAM
         --parameter-overrides 
         UserPoolId="${{ secrets[format('{0}_USER_POOL_ID', steps.env.outputs.env)] }}" 
         UserPoolClientId="${{ secrets[format('{0}_COGNITO_CLIENT_ID', steps.env.outputs.env)] }}" 
