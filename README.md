@@ -1,4 +1,5 @@
 # GroovDB API
+[![DOI](https://zenodo.org/badge/1019008840.svg)](https://doi.org/10.5281/zenodo.17234329)
 
 Backend API for the GroovDB database - a comprehensive biosensor database for synthetic biology research.
 
