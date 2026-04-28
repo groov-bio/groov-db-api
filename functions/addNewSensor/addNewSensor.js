@@ -69,6 +69,7 @@ const operatorSchema = Joi.object({
       "Fluorescence polarization",
       "Surface plasmon resonance",
       "Synthetic regulation",
+      "ChIP-Seq",
     )
     .required(),
   ref_figure: Joi.string()
@@ -88,7 +89,11 @@ const ligandSchema = Joi.object({
       "Synthetic regulation", 
       "Fluorescence polarization",
       "Surface plasmon resonance",
-      )
+      "Thermal shift",
+      "Spectrophotometric competition",
+      "Spectral shift",
+      "DNA affinity chromatography",
+        )
     .required(),
   ref_figure: Joi.string()
     .pattern(new RegExp("^(Figure|Table) [S]?[1-9]?[0-9A-Za-z]?$"))
