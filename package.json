@@ -15,7 +15,7 @@
     "test:coverage": "NODE_OPTIONS=\"--experimental-vm-modules\" jest --coverage"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=24.0.0"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.400.0",
