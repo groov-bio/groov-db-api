@@ -121,7 +121,39 @@ Resources:
       Layers:
         - !Ref NodeLayer
  
-  InsertFormFunction: 
+  GroovTempTableV2:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${Env}-groov-temp-v2
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  GroovTempTableV2Processed:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${Env}-groov-temp-v2-processed
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  InsertFormFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/insertForm
@@ -161,7 +193,48 @@ Resources:
             TableName: !Ref TableName
         - DynamoDBCrudPolicy:
             TableName: !Ref TempTableName
-         
+
+  InsertFormV2Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/insertFormV2
+      Handler: insertForm.handler
+      Runtime: nodejs20.x
+      MemorySize: 128
+      Timeout: 10
+      FunctionName: !Sub ${Env}-insert-form-v2-function
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+          TEMP_TABLE_V2_NAME: !Ref GroovTempTableV2
+          TABLE_NAME: !Ref TableName
+          ENV: !Ref Env
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/insertForm
+            Method: post
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        OptionsApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/insertForm
+            Method: options
+      Layers:
+        - !Ref NodeLayer
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TableName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GroovTempTableV2
+
   GetTempSensorFunction: 
     Type: AWS::Serverless::Function
     Properties:
@@ -287,6 +360,57 @@ Resources:
             TableName: !Ref TempTableName
         - DynamoDBCrudPolicy:
             TableName: !Ref TableName
+
+      Layers:
+        - !Ref NodeLayer
+
+  AddNewSensorV2Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/addNewSensorV2
+      Handler: addNewSensor.handler
+      Runtime: nodejs20.x
+      MemorySize: 128
+      Timeout: 240
+      FunctionName: !Sub ${Env}-add-new-sensor-v2-function
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
+          TEMP_TABLE_V2_NAME: !Ref GroovTempTableV2
+          PROCESSED_TEMP_TABLE_V2_NAME: !Ref GroovTempTableV2Processed
+          ENV: !Ref Env
+          GET_OPERON_FUNCTION_ARN: !GetAtt GetOperonFunction.Arn
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/addNewSensor
+            Method: post
+            Auth:
+              Authorizer: AdminAuthorizer
+        OptionsApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/addNewSensor
+            Method: options
+      Policies:
+        - AWSLambdaBasicExecutionRole
+
+        - Statement:
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !GetAtt GetOperonFunction.Arn
+
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GroovTempTableV2
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GroovTempTableV2Processed
 
       Layers:
         - !Ref NodeLayer
