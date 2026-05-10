@@ -380,7 +380,6 @@ Resources:
           TEMP_TABLE_V2_NAME: !Ref GroovTempTableV2
           PROCESSED_TEMP_TABLE_V2_NAME: !Ref GroovTempTableV2Processed
           ENV: !Ref Env
-          GET_OPERON_FUNCTION_ARN: !GetAtt GetOperonFunction.Arn
       Architectures:
         - arm64
       Events:
@@ -400,13 +399,6 @@ Resources:
             Method: options
       Policies:
         - AWSLambdaBasicExecutionRole
-
-        - Statement:
-            - Effect: Allow
-              Action:
-                - lambda:InvokeFunction
-              Resource: !GetAtt GetOperonFunction.Arn
-
         - DynamoDBCrudPolicy:
             TableName: !Ref GroovTempTableV2
         - DynamoDBCrudPolicy:

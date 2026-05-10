@@ -5,7 +5,7 @@ import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb'
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { logger } from './utils/logger.js';
-import { invokeLambda } from './utils/lambdaInvoker.js';
+import { acc2operon } from './utils/operon.js';
 
 const client = new DynamoDBClient({
   region: "us-east-2",
@@ -174,23 +174,19 @@ const callDOI = async (doi) => {
 
 const enrichDOI = async (items) => {
   if (!items?.length) return [];
-  const out = [];
-  for (const item of items) {
-    out.push({ ...item, fullDOI: item.doi ? await callDOI(item.doi) : null });
-  }
-  return out;
+  return Promise.all(
+    items.map(async (item) => ({
+      ...item,
+      fullDOI: item.doi ? await callDOI(item.doi) : null,
+    }))
+  );
 };
 
 export const callOperonLambda = async (id) => {
-  logger.info(`Invoking Operon Lambda for ID: ${id}`);
-  const payload = { queryStringParameters: { id } };
-  const result = await invokeLambda('getOperon', process.env.GET_OPERON_FUNCTION_ARN, payload, null, 'GET');
-  // Existing pre-condition: result.body is a JSON string. Parse so downstream
-  // builders can read fields rather than getting `undefined` everywhere.
-  if (typeof result.body === 'string') {
-    try { return JSON.parse(result.body); } catch { return null; }
-  }
-  return result.body;
+  // In-process port of the former getOperon Python lambda (see utils/operon.js).
+  // The name is kept so callers and tests don't have to change.
+  logger.info(`Resolving operon in-process for ID: ${id}`);
+  return acc2operon(id);
 };
 
 const processPDBId = async (id) => {
@@ -406,18 +402,30 @@ const buildProtein = (protein, enrichment) => {
 };
 
 const enrichProtein = async (protein) => {
-  const uniData = await callUniProtAPI(protein.uniProtID);
+  // Kick off all independent fetches concurrently. UniProt is awaited first so
+  // its "no results" / non-OK errors take precedence over downstream DOI
+  // failures — preserves the original sequential failure ordering.
+  const uniDataP = callUniProtAPI(protein.uniProtID);
+  const ligandsP = enrichDOI(protein.ligands);
+  const operatorsP = enrichDOI(protein.operators);
+  const lightP = enrichDOI(protein.light_stimuli);
+  const temperatureP = enrichDOI(protein.temperature_stimuli);
+  // Suppress unhandledRejection warnings if UniProt throws first — the real
+  // rejection is still surfaced by the await Promise.all below if we get there.
+  for (const p of [ligandsP, operatorsP, lightP, temperatureP]) p.catch(() => {});
+
+  const uniData = await uniDataP;
   if (!uniData.results?.length) {
     const err = new Error(`No UniProt results for ${protein.uniProtID}`);
     err.statusCode = 400;
     throw err;
   }
   const uniEntry = uniData.results[0];
-  const xrefData = await tryXrefData(uniEntry, protein.accession ?? null);
-  const enrichedLigands = await enrichDOI(protein.ligands);
-  const enrichedOperators = await enrichDOI(protein.operators);
-  const enrichedLight = await enrichDOI(protein.light_stimuli);
-  const enrichedTemperature = await enrichDOI(protein.temperature_stimuli);
+
+  const [enrichedLigands, enrichedOperators, enrichedLight, enrichedTemperature, xrefData] = await Promise.all([
+    ligandsP, operatorsP, lightP, temperatureP,
+    tryXrefData(uniEntry, protein.accession ?? null),
+  ]);
   const enrichedStructures = await Promise.all(
     (xrefData.structure ?? []).map(async (s) => ({
       ...s,
@@ -512,10 +520,8 @@ export const handler = async (event) => {
 
   let perProteinEnrichment;
   try {
-    perProteinEnrichment = [];
-    for (const protein of data.sensor.proteins) {
-      perProteinEnrichment.push(await enrichProtein(protein));
-    }
+    // Fan out across proteins — sized for the current 2-protein cap.
+    perProteinEnrichment = await Promise.all(data.sensor.proteins.map(enrichProtein));
   } catch (err) {
     logger.error('Enrichment failed', err);
     return errorBody(err.statusCode ?? 500, err.message ?? 'Error enriching protein data', corsHeaders);
