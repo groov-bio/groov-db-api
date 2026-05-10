@@ -9,7 +9,7 @@ const docClientMock = mockClient(DynamoDBDocumentClient);
 const mockFetch = jest.fn();
 const mockCiteConstructor = jest.fn();
 const mockCiteInstance = { format: jest.fn() };
-const mockInvokeLambda = jest.fn();
+const mockAcc2operon = jest.fn();
 const mockLogger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
 
 mockCiteConstructor.mockImplementation(() => mockCiteInstance);
@@ -17,7 +17,7 @@ mockCiteConstructor.mockImplementation(() => mockCiteInstance);
 jest.unstable_mockModule('citation-js', () => ({ default: mockCiteConstructor }));
 jest.unstable_mockModule('node-fetch', () => ({ default: mockFetch }));
 jest.unstable_mockModule('../../functions/addNewSensorV2/utils/logger.js', () => ({ logger: mockLogger }));
-jest.unstable_mockModule('../../functions/addNewSensorV2/utils/lambdaInvoker.js', () => ({ invokeLambda: mockInvokeLambda }));
+jest.unstable_mockModule('../../functions/addNewSensorV2/utils/operon.js', () => ({ acc2operon: mockAcc2operon }));
 
 const { handler } = await import('../../functions/addNewSensorV2/addNewSensor.js');
 
@@ -97,8 +97,11 @@ describe('AddNewSensorV2 Function', () => {
     },
   };
 
+  // acc2operon now returns the parsed operon object directly (no Lambda envelope).
   const mockOperonResponse = {
-    body: JSON.stringify({ operon: [{ link: 'g1', start: 1, Stop: 100, description: 'd', direction: '+' }] }),
+    operon: [{ link: 'g1', start: 1, Stop: 100, description: 'd', direction: '+' }],
+    regIndex: 0,
+    genome: 'NC_TEST.1',
   };
 
   const setupSuccessfulMocks = () => {
@@ -115,7 +118,7 @@ describe('AddNewSensorV2 Function', () => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
     });
 
-    mockInvokeLambda.mockResolvedValue(mockOperonResponse);
+    mockAcc2operon.mockResolvedValue(mockOperonResponse);
     mockCiteInstance.format.mockReturnValue(JSON.stringify(mockCitationResponse));
   };
 
@@ -131,7 +134,7 @@ describe('AddNewSensorV2 Function', () => {
     mockFetch.mockReset();
     mockCiteConstructor.mockReset();
     mockCiteInstance.format.mockReset();
-    mockInvokeLambda.mockReset();
+    mockAcc2operon.mockReset();
     Object.values(mockLogger).forEach(fn => fn.mockReset());
     mockCiteConstructor.mockImplementation(() => mockCiteInstance);
 
@@ -243,7 +246,7 @@ describe('AddNewSensorV2 Function', () => {
         if (url.includes('rest.uniprot.org')) return Promise.resolve({ ok: true, json: () => Promise.resolve(mockUniProtResponse) });
         return Promise.resolve({ ok: true, json: () => Promise.resolve(mockPDBResponse) });
       });
-      mockInvokeLambda.mockResolvedValue(mockOperonResponse);
+      mockAcc2operon.mockResolvedValue(mockOperonResponse);
       mockCiteInstance.format.mockReturnValue(JSON.stringify(mockCitationResponse));
 
       const result = await handler(eventFor({ submissionUUID: SUB_UUID }));
@@ -320,7 +323,7 @@ describe('AddNewSensorV2 Function', () => {
         }
         return Promise.resolve({ ok: false, status: 500, text: () => Promise.resolve('PDB error') });
       });
-      mockInvokeLambda.mockResolvedValue(mockOperonResponse);
+      mockAcc2operon.mockResolvedValue(mockOperonResponse);
       mockCiteInstance.format.mockReturnValue(JSON.stringify(mockCitationResponse));
       const result = await handler(eventFor(validBody));
       expect(result.statusCode).toBe(500);
@@ -328,20 +331,14 @@ describe('AddNewSensorV2 Function', () => {
     });
   });
 
-  describe('Operon Lambda integration', () => {
-    test('should call operon lambda with user-provided accession', async () => {
+  describe('Operon resolver integration', () => {
+    test('should call acc2operon with user-provided accession', async () => {
       setupSuccessfulMocks();
       await handler(eventFor(validBody));
-      expect(mockInvokeLambda).toHaveBeenCalledWith(
-        'getOperon',
-        'test-operon-arn',
-        expect.objectContaining({ queryStringParameters: { id: 'TEST_ACC' } }),
-        null,
-        'GET',
-      );
+      expect(mockAcc2operon).toHaveBeenCalledWith('TEST_ACC');
     });
 
-    test('should propagate operon lambda errors as 500', async () => {
+    test('should propagate operon resolver errors as 500', async () => {
       docClientMock.on(GetCommand).resolves({ Item: undefined });
       mockFetch.mockImplementation((url) => {
         if (url.includes('rest.uniprot.org')) {
@@ -349,11 +346,11 @@ describe('AddNewSensorV2 Function', () => {
         }
         return Promise.resolve({ ok: true, json: () => Promise.resolve(mockPDBResponse) });
       });
-      mockInvokeLambda.mockRejectedValue(new Error('Lambda error'));
+      mockAcc2operon.mockRejectedValue(new Error('Operon resolver error'));
       mockCiteInstance.format.mockReturnValue(JSON.stringify(mockCitationResponse));
       const result = await handler(eventFor(validBody));
       expect(result.statusCode).toBe(500);
-      expect(JSON.parse(result.body).message).toBe('Lambda error');
+      expect(JSON.parse(result.body).message).toBe('Operon resolver error');
     });
   });
 
@@ -418,7 +415,7 @@ describe('AddNewSensorV2 Function', () => {
         if (url.includes('rest.uniprot.org')) return Promise.resolve({ ok: true, json: () => Promise.resolve(mockUniProtResponse) });
         return Promise.resolve({ ok: true, json: () => Promise.resolve(mockPDBResponse) });
       });
-      mockInvokeLambda.mockResolvedValue(mockOperonResponse);
+      mockAcc2operon.mockResolvedValue(mockOperonResponse);
       mockCiteInstance.format.mockReturnValue(JSON.stringify(mockCitationResponse));
       const result = await handler(eventFor(validBody));
       expect(result.statusCode).toBe(500);
