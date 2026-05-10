@@ -889,6 +889,186 @@ Resources:
       DockerContext: ./functions/ligifyBlast
       DockerTag: latest
 
+  GetAllTempSensorsV2Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/getAllTempSensorsV2
+      Handler: getAllTempSensors.handler
+      Runtime: nodejs20.x
+      MemorySize: 256
+      Timeout: 10
+      FunctionName: !Sub ${Env}-get-all-temp-sensors-v2-function
+      Environment:
+        Variables:
+          TEMP_TABLE_V2_NAME: !Ref GroovTempTableV2
+          ENV: !Ref Env
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/getAllTempSensors
+            Method: get
+            Auth:
+              Authorizer: AdminAuthorizer
+        OptionsApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/getAllTempSensors
+            Method: options
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref GroovTempTableV2
+      Layers:
+        - !Ref NodeLayer
+
+  GetTempSensorV2Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/getTempSensorV2
+      Handler: getTempSensor.handler
+      Runtime: nodejs20.x
+      MemorySize: 128
+      Timeout: 10
+      FunctionName: !Sub ${Env}-get-temp-sensor-v2-function
+      Environment:
+        Variables:
+          TEMP_TABLE_V2_NAME: !Ref GroovTempTableV2
+          ENV: !Ref Env
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/getTempSensor
+            Method: get
+            Auth:
+              Authorizer: AdminAuthorizer
+        OptionsApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/getTempSensor
+            Method: options
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref GroovTempTableV2
+      Layers:
+        - !Ref NodeLayer
+
+  DeleteTempV2Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/deleteTempV2
+      Handler: deleteTemp.handler
+      Runtime: nodejs20.x
+      MemorySize: 128
+      Timeout: 10
+      FunctionName: !Sub ${Env}-delete-temp-v2-function
+      Environment:
+        Variables:
+          TEMP_TABLE_V2_NAME: !Ref GroovTempTableV2
+          ENV: !Ref Env
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/deleteTemp
+            Method: post
+            Auth:
+              Authorizer: AdminAuthorizer
+        OptionsApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/deleteTemp
+            Method: options
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GroovTempTableV2
+      Layers:
+        - !Ref NodeLayer
+
+  GetAllProcessedTempV2Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/getAllProcessedTempV2
+      Handler: getAllProcessedTemp.handler
+      Runtime: nodejs20.x
+      MemorySize: 256
+      Timeout: 10
+      FunctionName: !Sub ${Env}-get-all-processed-temp-v2-function
+      Environment:
+        Variables:
+          PROCESSED_TEMP_TABLE_V2_NAME: !Ref GroovTempTableV2Processed
+          ENV: !Ref Env
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/getAllProcessedTemp
+            Method: get
+            Auth:
+              Authorizer: AdminAuthorizer
+        OptionsApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/getAllProcessedTemp
+            Method: options
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref GroovTempTableV2Processed
+      Layers:
+        - !Ref NodeLayer
+
+  GetProcessedTempV2Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/getProcessedTempV2
+      Handler: getProcessedTemp.handler
+      Runtime: nodejs20.x
+      MemorySize: 128
+      Timeout: 10
+      FunctionName: !Sub ${Env}-get-processed-temp-v2-function
+      Environment:
+        Variables:
+          PROCESSED_TEMP_TABLE_V2_NAME: !Ref GroovTempTableV2Processed
+          ENV: !Ref Env
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/getProcessedTemp
+            Method: get
+            Auth:
+              Authorizer: AdminAuthorizer
+        OptionsApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/getProcessedTemp
+            Method: options
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref GroovTempTableV2Processed
+      Layers:
+        - !Ref NodeLayer
+
   AccessLogs:
     Type: AWS::Logs::LogGroup
     Properties:

@@ -1,0 +1,6 @@
+{
+  "name": "getalltempsensorsv2",
+  "version": "1.0.0",
+  "main": "getAllTempSensors.js",
+  "type": "module"
+}
