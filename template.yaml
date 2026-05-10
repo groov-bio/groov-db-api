@@ -370,7 +370,7 @@ Resources:
       CodeUri: functions/addNewSensorV2
       Handler: addNewSensor.handler
       Runtime: nodejs20.x
-      MemorySize: 128
+      MemorySize: 3008
       Timeout: 240
       FunctionName: !Sub ${Env}-add-new-sensor-v2-function
       Environment:

@@ -216,27 +216,30 @@ const processPDBId = async (id) => {
 
 const tryXrefData = async (uniEntry, accession) => {
   const xref = uniEntry.uniProtKBCrossReferences ?? [];
-  let operonData = null;
-  const structureData = [];
+
+  const pdbIds = [];
   let keggID = null;
-
-  if (accession) {
-    operonData = await callOperonLambda(accession);
-  }
-
+  let refseqFallback = null;
   for (const x of xref) {
     switch (x.database) {
       case 'RefSeq':
-        if (!accession && !operonData) operonData = await callOperonLambda(x.id);
+        if (!refseqFallback) refseqFallback = x.id;
         break;
       case 'PDB':
-        structureData.push(await processPDBId(x.id));
+        pdbIds.push(x.id);
         break;
       case 'KEGG':
         if (!keggID) keggID = x.id;
         break;
     }
   }
+
+  // Operon resolution (~20s) and PDB lookups are independent — fan out together.
+  const operonId = accession ?? refseqFallback;
+  const [operonData, structureData] = await Promise.all([
+    operonId ? callOperonLambda(operonId) : Promise.resolve(null),
+    Promise.all(pdbIds.map(processPDBId)),
+  ]);
 
   return { operon: operonData, structure: structureData, kegg: keggID };
 };

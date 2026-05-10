@@ -77,24 +77,35 @@ const splitLinesKeepNewlines = (text) => {
   return lines;
 };
 
-export const NC2genome = async (NCacc) => {
-  logger.info(`Fetching genome for NC accession: ${NCacc}`);
-  const url = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=${NCacc}&rettype=fasta_cds_aa`;
-  const res = await fetchText(url, 30000);
+// Per-invocation cache. Stores the in-flight Promise so concurrent callers for
+// the same NCacc share one fetch+parse instead of racing two ~24s downloads.
+const genomeCache = new Map();
 
-  let text = '';
-  if (res.ok) {
-    text = await res.text();
-    logger.info('Genome data retrieved successfully');
-  } else {
-    logger.error(`Bad request when fetching genome: ${res.status}`);
-    // Python falls through and reads /tmp/genome.txt anyway, which can return
-    // stale data from a previous invocation. We deliberately do NOT replicate
-    // that — return an empty list so the caller fails cleanly.
+export const NC2genome = async (NCacc) => {
+  if (genomeCache.has(NCacc)) {
+    logger.info(`Genome cache hit for NC accession: ${NCacc}`);
+    return genomeCache.get(NCacc);
   }
-  const genome = splitLinesKeepNewlines(text);
-  logger.info(`Genome parsed with ${genome.length} lines`);
-  return genome;
+  const p = (async () => {
+    logger.info(`Fetching genome for NC accession: ${NCacc}`);
+    const url = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=${NCacc}&rettype=fasta_cds_aa`;
+    const res = await fetchText(url, 30000);
+
+    let text = '';
+    if (res.ok) {
+      text = await res.text();
+      logger.info('Genome data retrieved successfully');
+    } else {
+      logger.error(`Bad request when fetching genome: ${res.status}`);
+    }
+    const genome = splitLinesKeepNewlines(text);
+    logger.info(`Genome parsed with ${genome.length} lines`);
+    return genome;
+  })();
+  genomeCache.set(NCacc, p);
+  // On failure, drop the cached rejection so a subsequent caller can retry.
+  p.catch(() => genomeCache.delete(NCacc));
+  return p;
 };
 
 export const parseGenome = (genome, start, stop) => {
