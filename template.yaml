@@ -65,7 +65,7 @@ Resources:
       Description: Shared Node.js dependencies
       ContentUri: layers/node/
       CompatibleRuntimes:
-        - nodejs20.x
+        - nodejs24.x
   
   PythonLayer:
     Type: AWS::Serverless::LayerVersion
@@ -81,7 +81,7 @@ Resources:
     Properties:
       CodeUri: functions/docs
       Handler: docs.handler
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
       FunctionName: !Sub ${Env}-docs-function
       MemorySize: 256
       Environment:
@@ -108,7 +108,7 @@ Resources:
     Properties:
       CodeUri: functions/adminAuthorizer
       Handler: adminAuthorizer.handler
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
       FunctionName: !Sub ${Env}-admin-authorizer-function
       Policies:
         - AWSLambdaBasicExecutionRole
@@ -158,7 +158,7 @@ Resources:
     Properties:
       CodeUri: functions/insertForm
       Handler: insertForm.handler
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
       MemorySize: 128
       Timeout: 10
       FunctionName: !Sub ${Env}-insert-form-function
@@ -240,7 +240,7 @@ Resources:
     Properties:
       CodeUri: functions/getTempSensor
       Handler: getTempSensor.handler
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
       MemorySize: 128
       Timeout: 10
       FunctionName: !Sub ${Env}-get-temp-sensor-function
@@ -279,7 +279,7 @@ Resources:
     Properties:
       CodeUri: functions/deleteTemp
       Handler: deleteTemp.handler
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
       MemorySize: 128
       Timeout: 10
       FunctionName: !Sub ${Env}-delete-temp-sensor-function
@@ -318,7 +318,7 @@ Resources:
     Properties:
       CodeUri: functions/addNewSensor
       Handler: addNewSensor.handler
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
       MemorySize: 128
       Timeout: 240
       FunctionName: !Sub ${Env}-add-new-sensor-function
@@ -420,7 +420,7 @@ Resources:
     Properties:
       CodeUri: functions/editSensor
       Handler: editSensor.handler
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
       MemorySize: 128
       Timeout: 10
       FunctionName: !Sub ${Env}-edit-sensor-function
@@ -482,7 +482,7 @@ Resources:
     Properties:
       CodeUri: functions/approveProcessedSensor
       Handler: approveProcessedSensor.handler
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
       MemorySize: 128
       Timeout: 30
       FunctionName: !Sub ${Env}-approve-processed-sensor-function
@@ -533,7 +533,7 @@ Resources:
     Properties:
       CodeUri: functions/getProcessedTemp
       Handler: getProcessedTemp.handler
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
       MemorySize: 128
       Timeout: 10
       FunctionName: !Sub ${Env}-get-processed-temp-sensor-function
@@ -572,7 +572,7 @@ Resources:
     Properties:
       CodeUri: functions/rejectProcessedSensor
       Handler: rejectProcessedSensor.handler
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
       MemorySize: 128
       Timeout: 10
       FunctionName: !Sub ${Env}-reject-processed-sensor-function
@@ -611,7 +611,7 @@ Resources:
     Properties:
       CodeUri: functions/getAllTempSensors
       Handler: getAllTempSensors.handler
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
       MemorySize: 256
       Timeout: 10
       FunctionName: !Sub ${Env}-get-all-temp-sensors-function
@@ -650,7 +650,7 @@ Resources:
     Properties:
       CodeUri: functions/getAllProcessedTemp
       Handler: getAllProcessedTemp.handler
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
       MemorySize: 256
       Timeout: 10
       FunctionName: !Sub ${Env}-get-all-processed-temp-function
@@ -689,7 +689,7 @@ Resources:
     Properties:
       CodeUri: functions/contactForm
       Handler: contactForm.handler
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
       MemorySize: 256
       Timeout: 10
       FunctionName: !Sub ${Env}-contact-form-function
