@@ -1,0 +1,6 @@
+{
+  "name": "getprocessedtempv2",
+  "version": "1.0.0",
+  "main": "getProcessedTemp.js",
+  "type": "module"
+}
