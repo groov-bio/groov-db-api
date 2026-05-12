@@ -91,17 +91,17 @@ const proteinSchema = Joi.object({
   accession: Joi.string().pattern(new RegExp("^[A-Za-z0-9_.]+$")).required(),
   mechanism: Joi.string()
     .valid("Apo-repressor", "Apo-activator", "Co-repressor", "Co-activator")
-    .allow('', null).optional(),
-  ligands: Joi.array().items(ligandSchema).optional(),
-  operators: Joi.array().items(operatorSchema).optional(),
-  light_stimuli: Joi.array().items(lightStimulusSchema).optional(),
-  temperature_stimuli: Joi.array().items(temperatureStimulusSchema).optional(),
+    .required(),
+  ligands: Joi.array().items(ligandSchema).min(1).optional(),
+  operators: Joi.array().items(operatorSchema).min(1).optional(),
+  light_stimuli: Joi.array().items(lightStimulusSchema).min(1).optional(),
+  temperature_stimuli: Joi.array().items(temperatureStimulusSchema).min(1).optional(),
   mutations: Joi.array().items(Joi.object({
     mutations: Joi.array().items(Joi.string().max(32)).min(1).required(),
     ref_type: Joi.string().valid("UniProt", "groovDB").required(),
     ref_id: Joi.string().max(64).required(),
   })).optional(),
-});
+}).or('ligands', 'operators', 'light_stimuli', 'temperature_stimuli');
 
 const sensorSchema = Joi.object({
   category: Joi.string()
