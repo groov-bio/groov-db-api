@@ -96,7 +96,11 @@ const proteinSchema = Joi.object({
   operators: Joi.array().items(operatorSchema).optional(),
   light_stimuli: Joi.array().items(lightStimulusSchema).optional(),
   temperature_stimuli: Joi.array().items(temperatureStimulusSchema).optional(),
-  mutations: Joi.array().items(Joi.string().max(32)).optional(),
+  mutations: Joi.array().items(Joi.object({
+    mutations: Joi.array().items(Joi.string().max(32)).min(1).required(),
+    ref_type: Joi.string().valid("UniProt", "groovDB").required(),
+    ref_id: Joi.string().max(64).required(),
+  })).optional(),
 });
 
 const sensorSchema = Joi.object({

@@ -225,7 +225,7 @@ describe('InsertFormV2 Function', () => {
               method: 'EMSA',
               ref_figure: 'Figure 4',
             }],
-            mutations: ['A23T', 'L45F'],
+            mutations: [{ mutations: ['A23T', 'L45F'], ref_type: 'UniProt', ref_id: 'P12345' }],
           }],
         },
       }));
