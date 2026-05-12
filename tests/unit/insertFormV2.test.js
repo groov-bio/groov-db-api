@@ -135,6 +135,63 @@ describe('InsertFormV2 Function', () => {
       expect(result.statusCode).toBe(400);
     });
 
+    test('should reject protein with no ligands/operators/light/temperature stimuli', async () => {
+      const result = await handler(eventFor({
+        sensor: {
+          category: 'MarR',
+          about: 'test',
+          proteins: [
+            { alias: 'test', uniProtID: 'test', accession: 'test', mechanism: 'Apo-activator' },
+            { alias: 'test', uniProtID: 'test', accession: 'test', mechanism: 'Apo-activator' },
+          ],
+        },
+      }));
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).type).toBe('Validation Error');
+    });
+
+    test('should reject protein missing mechanism', async () => {
+      const { mechanism, ...proteinNoMechanism } = validProtein;
+      const result = await handler(eventFor({
+        ...validBody,
+        sensor: { ...validBody.sensor, proteins: [proteinNoMechanism] },
+      }));
+      expect(result.statusCode).toBe(400);
+    });
+
+    test('should reject protein with empty ligands/operators arrays', async () => {
+      const result = await handler(eventFor({
+        ...validBody,
+        sensor: {
+          ...validBody.sensor,
+          proteins: [{ ...validProtein, ligands: [], operators: [] }],
+        },
+      }));
+      expect(result.statusCode).toBe(400);
+    });
+
+    test('should accept protein with only light_stimuli (no ligands/operators)', async () => {
+      docClientMock.on(PutCommand).resolves({});
+      const { ligands, operators, ...proteinNoLigOp } = validProtein;
+      const result = await handler(eventFor({
+        ...validBody,
+        sensor: {
+          ...validBody.sensor,
+          proteins: [{
+            ...proteinNoLigOp,
+            light_stimuli: [{
+              wavelength: 470,
+              regulatory_effect: 'Activates',
+              doi: '10.1234/light',
+              method: 'EMSA',
+              ref_figure: 'Figure 3',
+            }],
+          }],
+        },
+      }));
+      expect(result.statusCode).toBe(202);
+    });
+
     test('should return validation error for invalid ref_figure format', async () => {
       const result = await handler(eventFor({
         ...validBody,
