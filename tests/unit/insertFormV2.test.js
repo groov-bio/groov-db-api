@@ -30,11 +30,14 @@ describe('InsertFormV2 Function', () => {
     jest.clearAllMocks();
   });
 
+  // Per-protein now requires `family` (not `mechanism`).
+  // `mechanism` has moved to sensor level.
+  // `category` is removed from sensor.
   const validProtein = {
     alias: 'TestAlias',
     uniProtID: 'P12345',
     accession: 'TEST_ACC',
-    mechanism: 'Apo-repressor',
+    family: 'TetR',
     ligands: [
       {
         doi: '10.1234/ligand',
@@ -56,7 +59,7 @@ describe('InsertFormV2 Function', () => {
 
   const validBody = {
     sensor: {
-      category: 'TetR',
+      mechanism: 'Apo-repressor',
       about: 'Test sensor description',
       proteins: [validProtein],
     },
@@ -118,10 +121,10 @@ describe('InsertFormV2 Function', () => {
       expect(Array.isArray(body.errors)).toBe(true);
     });
 
-    test('should return validation error for invalid category', async () => {
+    test('should return validation error for invalid mechanism', async () => {
       const result = await handler(eventFor({
         ...validBody,
-        sensor: { ...validBody.sensor, category: 'INVALID' },
+        sensor: { ...validBody.sensor, mechanism: 'INVALID' },
       }));
       expect(result.statusCode).toBe(400);
       expect(JSON.parse(result.body).type).toBe('Validation Error');
@@ -138,11 +141,11 @@ describe('InsertFormV2 Function', () => {
     test('should reject protein with no ligands/operators/light/temperature stimuli', async () => {
       const result = await handler(eventFor({
         sensor: {
-          category: 'MarR',
+          mechanism: 'Apo-activator',
           about: 'test',
           proteins: [
-            { alias: 'test', uniProtID: 'test', accession: 'test', mechanism: 'Apo-activator' },
-            { alias: 'test', uniProtID: 'test', accession: 'test', mechanism: 'Apo-activator' },
+            { alias: 'test', uniProtID: 'test', accession: 'test', family: 'MarR' },
+            { alias: 'test2', uniProtID: 'test2', accession: 'test2', family: 'MarR' },
           ],
         },
       }));
@@ -150,11 +153,11 @@ describe('InsertFormV2 Function', () => {
       expect(JSON.parse(result.body).type).toBe('Validation Error');
     });
 
-    test('should reject protein missing mechanism', async () => {
-      const { mechanism, ...proteinNoMechanism } = validProtein;
+    test('should reject protein missing family', async () => {
+      const { family, ...proteinNoFamily } = validProtein;
       const result = await handler(eventFor({
         ...validBody,
-        sensor: { ...validBody.sensor, proteins: [proteinNoMechanism] },
+        sensor: { ...validBody.sensor, proteins: [proteinNoFamily] },
       }));
       expect(result.statusCode).toBe(400);
     });
@@ -181,7 +184,7 @@ describe('InsertFormV2 Function', () => {
             ...proteinNoLigOp,
             light_stimuli: [{
               wavelength: 470,
-              regulatory_effect: 'Activates',
+              regulatory_effect: 'activates',
               doi: '10.1234/light',
               method: 'EMSA',
               ref_figure: 'Figure 3',
@@ -238,7 +241,7 @@ describe('InsertFormV2 Function', () => {
           ...validBody.sensor,
           proteins: [{
             ...validProtein,
-            ligands: [{ ...validProtein.ligands[0], regulatory_effect: 'Induces', kd: 1.5 }],
+            ligands: [{ ...validProtein.ligands[0], regulatory_effect: 'activates', kd: 1.5 }],
           }],
         },
       }));
@@ -270,14 +273,14 @@ describe('InsertFormV2 Function', () => {
             ...validProtein,
             light_stimuli: [{
               wavelength: 470,
-              regulatory_effect: 'Activates',
+              regulatory_effect: 'activates',
               doi: '10.1234/light',
               method: 'EMSA',
               ref_figure: 'Figure 3',
             }],
             temperature_stimuli: [{
               temperature: 37,
-              regulatory_effect: 'Activates',
+              regulatory_effect: 'activates',
               doi: '10.1234/temp',
               method: 'EMSA',
               ref_figure: 'Figure 4',
@@ -319,7 +322,7 @@ describe('InsertFormV2 Function', () => {
       expect(input.Item.PK).toBe('TEMP');
       expect(input.Item.SK).toBe(submissionUUID);
       expect(input.Item.sensor).toBeDefined();
-      expect(input.Item.sensor.category).toBe('TetR');
+      expect(input.Item.sensor.mechanism).toBe('Apo-repressor');
     });
 
     test('should preserve user-supplied fields in the written row', async () => {

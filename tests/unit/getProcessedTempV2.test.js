@@ -15,10 +15,12 @@ afterAll(() => {
   console.log.mockRestore();
 });
 
+// `category` is no longer a query param — only `submissionUUID` is required.
+// PK in DynamoDB is now the literal string 'PROCESSED'.
 const baseEvent = (overrides = {}) => ({
   requestContext: { http: { method: 'GET' } },
   headers: { origin: 'https://groov.bio' },
-  queryStringParameters: { category: 'TetR', submissionUUID: 'uuid-1' },
+  queryStringParameters: { submissionUUID: 'uuid-1' },
   ...overrides,
 });
 
@@ -34,15 +36,10 @@ describe('GetProcessedTempV2', () => {
     expect(res.statusCode).toBe(200);
   });
 
-  test('returns 400 when category missing', async () => {
-    const res = await handler(baseEvent({ queryStringParameters: { submissionUUID: 'uuid-1' } }));
-    expect(res.statusCode).toBe(400);
-    expect(JSON.parse(res.body).message).toMatch(/category/);
-  });
-
   test('returns 400 when submissionUUID missing', async () => {
-    const res = await handler(baseEvent({ queryStringParameters: { category: 'TetR' } }));
+    const res = await handler(baseEvent({ queryStringParameters: {} }));
     expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).message).toMatch(/submissionUUID/);
   });
 
   test('returns 400 when queryStringParameters absent', async () => {
@@ -53,10 +50,10 @@ describe('GetProcessedTempV2', () => {
   test('returns 200 with mapped row on happy path', async () => {
     docClientMock.on(GetCommand).resolves({
       Item: {
-        PK: 'TetR',
+        PK: 'PROCESSED',
         SK: 'uuid-1',
         proposed_grv_id: 'GRV-ABC',
-        data: { id: null, category: 'TetR', proteins: [{ uniprot_id: 'P12345' }] },
+        data: { id: null, proteins: [{ uniprot_id: 'P12345' }] },
       },
     });
 
@@ -65,15 +62,14 @@ describe('GetProcessedTempV2', () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body).toEqual({
-      category: 'TetR',
       submissionUUID: 'uuid-1',
       proposed_grv_id: 'GRV-ABC',
-      data: { id: null, category: 'TetR', proteins: [{ uniprot_id: 'P12345' }] },
+      data: { id: null, proteins: [{ uniprot_id: 'P12345' }] },
     });
 
     const call = docClientMock.calls()[0];
     expect(call.args[0].input.TableName).toBe('test-processed-v2-table');
-    expect(call.args[0].input.Key).toEqual({ PK: 'TetR', SK: 'uuid-1' });
+    expect(call.args[0].input.Key).toEqual({ PK: 'PROCESSED', SK: 'uuid-1' });
   });
 
   test('returns 404 when row not found', async () => {

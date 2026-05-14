@@ -48,7 +48,7 @@ const ligandSchema = Joi.object({
   ref_figure: Joi.string().pattern(refFigurePattern).required(),
   name: Joi.string().max(64).required(),
   SMILES: Joi.string().required(),
-  regulatory_effect: Joi.string().allow('', null).optional(),
+  regulatory_effect: Joi.string().valid('activates', 'represses').allow('', null).optional(),
   kd: Joi.number().allow(null).optional(),
 });
 
@@ -71,7 +71,7 @@ const operatorSchema = Joi.object({
 
 const lightStimulusSchema = Joi.object({
   wavelength: Joi.number().required(),
-  regulatory_effect: Joi.string().allow('', null).optional(),
+  regulatory_effect: Joi.string().valid('activates', 'represses').allow('', null).optional(),
   doi: Joi.string().pattern(doiPattern).allow('').optional(),
   method: Joi.string().allow('').optional(),
   ref_figure: Joi.string().pattern(refFigurePattern).allow('').optional(),
@@ -79,7 +79,7 @@ const lightStimulusSchema = Joi.object({
 
 const temperatureStimulusSchema = Joi.object({
   temperature: Joi.number().required(),
-  regulatory_effect: Joi.string().allow('', null).optional(),
+  regulatory_effect: Joi.string().valid('activates', 'represses').allow('', null).optional(),
   doi: Joi.string().pattern(doiPattern).allow('').optional(),
   method: Joi.string().allow('').optional(),
   ref_figure: Joi.string().pattern(refFigurePattern).allow('').optional(),
@@ -89,9 +89,7 @@ const proteinSchema = Joi.object({
   alias: Joi.string().max(16).pattern(new RegExp("^[A-Za-z0-9_.]+$")).required(),
   uniProtID: Joi.string().pattern(new RegExp("^[A-Za-z0-9_]+$")).required(),
   accession: Joi.string().pattern(new RegExp("^[A-Za-z0-9_.]+$")).required(),
-  mechanism: Joi.string()
-    .valid("Apo-repressor", "Apo-activator", "Co-repressor", "Co-activator")
-    .required(),
+  family: Joi.string().valid("TetR", "LysR", "AraC", "MarR", "LacI", "GntR", "LuxR", "IclR", "Other").required(),
   ligands: Joi.array().items(ligandSchema).min(1).optional(),
   operators: Joi.array().items(operatorSchema).min(1).optional(),
   light_stimuli: Joi.array().items(lightStimulusSchema).min(1).optional(),
@@ -104,8 +102,8 @@ const proteinSchema = Joi.object({
 }).or('ligands', 'operators', 'light_stimuli', 'temperature_stimuli');
 
 const sensorSchema = Joi.object({
-  category: Joi.string()
-    .valid("TetR", "LysR", "AraC", "MarR", "LacI", "GntR", "LuxR", "IclR", "Other")
+  mechanism: Joi.string()
+    .valid("Apo-repressor", "Apo-activator", "Co-repressor", "Co-activator")
     .required(),
   about: Joi.string().max(500).allow('').optional(),
   proteins: Joi.array().items(proteinSchema).min(1).required(),

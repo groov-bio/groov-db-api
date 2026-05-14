@@ -21,6 +21,8 @@ const baseEvent = (overrides = {}) => ({
   ...overrides,
 });
 
+// PK for all processed rows is now the literal 'PROCESSED'.
+// Mapped response shape: { submissionUUID, proposed_grv_id, data } — no `category` field.
 describe('GetAllProcessedTempV2', () => {
   beforeEach(() => {
     dynamoDbMock.reset();
@@ -37,16 +39,16 @@ describe('GetAllProcessedTempV2', () => {
     docClientMock.on(ScanCommand).resolves({
       Items: [
         {
-          PK: 'TetR',
+          PK: 'PROCESSED',
           SK: 'uuid-1',
           proposed_grv_id: null,
-          data: { id: null, type: 'One Component', category: 'TetR', proteins: [] },
+          data: { id: null, type: 'One Component', proteins: [] },
         },
         {
-          PK: 'LysR',
+          PK: 'PROCESSED',
           SK: 'uuid-2',
           proposed_grv_id: 'GRV-XYZ',
-          data: { id: null, type: 'Two Component', category: 'LysR', proteins: [] },
+          data: { id: null, type: 'Two Component', proteins: [] },
         },
       ],
     });
@@ -57,10 +59,9 @@ describe('GetAllProcessedTempV2', () => {
     const body = JSON.parse(res.body);
     expect(body.processed).toHaveLength(2);
     expect(body.processed[0]).toEqual({
-      category: 'TetR',
       submissionUUID: 'uuid-1',
       proposed_grv_id: null,
-      data: { id: null, type: 'One Component', category: 'TetR', proteins: [] },
+      data: { id: null, type: 'One Component', proteins: [] },
     });
     expect(body.processed[1].proposed_grv_id).toBe('GRV-XYZ');
 
@@ -78,18 +79,18 @@ describe('GetAllProcessedTempV2', () => {
     docClientMock
       .on(ScanCommand)
       .resolvesOnce({
-        Items: [{ PK: 'TetR', SK: 'uuid-1', data: {} }],
-        LastEvaluatedKey: { PK: 'TetR', SK: 'uuid-1' },
+        Items: [{ PK: 'PROCESSED', SK: 'uuid-1', data: {} }],
+        LastEvaluatedKey: { PK: 'PROCESSED', SK: 'uuid-1' },
       })
       .resolvesOnce({
-        Items: [{ PK: 'LysR', SK: 'uuid-2', data: {} }],
+        Items: [{ PK: 'PROCESSED', SK: 'uuid-2', data: {} }],
       });
 
     const res = await handler(baseEvent());
     const body = JSON.parse(res.body);
     expect(body.processed).toHaveLength(2);
     expect(docClientMock.calls()).toHaveLength(2);
-    expect(docClientMock.calls()[1].args[0].input.ExclusiveStartKey).toEqual({ PK: 'TetR', SK: 'uuid-1' });
+    expect(docClientMock.calls()[1].args[0].input.ExclusiveStartKey).toEqual({ PK: 'PROCESSED', SK: 'uuid-1' });
   });
 
   test('returns 500 when scan throws', async () => {
@@ -100,12 +101,11 @@ describe('GetAllProcessedTempV2', () => {
 
   test('handles missing proposed_grv_id and data fields by emitting null', async () => {
     docClientMock.on(ScanCommand).resolves({
-      Items: [{ PK: 'TetR', SK: 'uuid-1' }],
+      Items: [{ PK: 'PROCESSED', SK: 'uuid-1' }],
     });
     const res = await handler(baseEvent());
     const body = JSON.parse(res.body);
     expect(body.processed[0]).toEqual({
-      category: 'TetR',
       submissionUUID: 'uuid-1',
       proposed_grv_id: null,
       data: null,

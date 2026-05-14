@@ -54,7 +54,6 @@ export const handler = async (event) => {
       return { statusCode: 204, headers: corsHeaders };
     }
     const processed = items.map((item) => ({
-      category: item.PK,
       submissionUUID: item.SK,
       proposed_grv_id: item.proposed_grv_id ?? null,
       data: item.data ?? null,
