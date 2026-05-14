@@ -1061,6 +1061,120 @@ Resources:
       Layers:
         - !Ref NodeLayer
 
+  ApproveProcessedSensorV2Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/approveProcessedSensorV2
+      Handler: approveProcessedSensor.handler
+      Runtime: nodejs20.x
+      MemorySize: 256
+      Timeout: 30
+      FunctionName: !Sub ${Env}-approve-processed-sensor-v2-function
+      Environment:
+        Variables:
+          PROCESSED_TEMP_TABLE_V2_NAME: !Ref GroovTempTableV2Processed
+          PROD_TABLE_V2_NAME: groov_db_table_v2
+          ENV: !Ref Env
+          R2_BUCKET_NAME: !Ref R2BucketName
+          R2_ACCESS_KEY_ID: !Ref R2AccessKeyId
+          R2_SECRET_ACCESS_KEY: !Ref R2SecretAccessKey
+          R2_ENDPOINT: !Ref R2Endpoint
+          FINGERPRINT_LAMBDA_NAME: !Ref UpdateFingerprintV2Function
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/approveProcessedSensor
+            Method: post
+            Auth:
+              Authorizer: AdminAuthorizer
+        OptionsApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/approveProcessedSensor
+            Method: options
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GroovTempTableV2Processed
+        - DynamoDBCrudPolicy:
+            TableName: groov_db_table_v2
+        - Statement:
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !GetAtt UpdateFingerprintV2Function.Arn
+      Layers:
+        - !Ref NodeLayer
+
+  RejectProcessedSensorV2Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/rejectProcessedSensorV2
+      Handler: rejectProcessedSensor.handler
+      Runtime: nodejs20.x
+      MemorySize: 128
+      Timeout: 10
+      FunctionName: !Sub ${Env}-reject-processed-sensor-v2-function
+      Environment:
+        Variables:
+          PROCESSED_TEMP_TABLE_V2_NAME: !Ref GroovTempTableV2Processed
+          ENV: !Ref Env
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/rejectProcessedSensor
+            Method: post
+            Auth:
+              Authorizer: AdminAuthorizer
+        OptionsApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/rejectProcessedSensor
+            Method: options
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GroovTempTableV2Processed
+      Layers:
+        - !Ref NodeLayer
+
+  UpdateFingerprintV2Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/updateFingerprintV2
+      Handler: updateFingerprint.lambda_handler
+      Runtime: python3.12
+      MemorySize: 512
+      Timeout: 120
+      FunctionName: !Sub ${Env}-update-fingerprint-v2-function
+      Environment:
+        Variables:
+          ENV: !Ref Env
+          R2_BUCKET_NAME: !Ref R2BucketName
+          R2_ACCESS_KEY_ID: !Ref R2AccessKeyId
+          R2_SECRET_ACCESS_KEY: !Ref R2SecretAccessKey
+          R2_ENDPOINT: !Ref R2Endpoint
+      Architectures:
+        - x86_64
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+              Resource: !Sub "arn:${AWS::Partition}:s3:::${R2BucketName}/*"
+      Layers:
+        - !Ref PythonLayer
+
   AccessLogs:
     Type: AWS::Logs::LogGroup
     Properties:
