@@ -863,7 +863,7 @@ export const handler = async (event) => {
       xrefData = await tryXrefData(uniData.results[0], data.about.accession ? data.about.accession : null);
     } catch (err) {
       console.log(err)
-      return returnErrorBody(err.code, err.message);
+      return returnErrorBody(err.code || 500, err.message, corsHeaders);
     }
 
     //Construct full object to be read from previous API calls
@@ -873,21 +873,21 @@ export const handler = async (event) => {
       console.log(fullDataObj)
     } catch (err) {
       console.log(err)
-      return returnErrorBody(500, `Error trying to create full object from API calls. Error: ${err}`);
+      return returnErrorBody(500, `Error trying to create full object from API calls. Error: ${err}`, corsHeaders);
     }
 
     try {
       walkedResult = await walkData(fullDataObj);
     } catch (err) {
       console.log(err)
-      return returnErrorBody(err.code, err.message);
+      return returnErrorBody(err.code || 500, err.message, corsHeaders);
     }
     
     try {
       await writeBatch(walkedResult);
     } catch (err) {
       console.log(err)
-      return returnErrorBody(500, 'Error writing to DynamoDB.')
+      return returnErrorBody(500, 'Error writing to DynamoDB.', corsHeaders);
     }
 
     logger.info('Successfully processed request');
