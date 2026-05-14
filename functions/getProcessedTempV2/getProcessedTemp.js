@@ -33,20 +33,19 @@ export const handler = async (event) => {
     return { statusCode: 200, headers: corsHeaders };
   }
 
-  const category = event.queryStringParameters?.category;
   const submissionUUID = event.queryStringParameters?.submissionUUID;
-  if (!category || !submissionUUID) {
+  if (!submissionUUID) {
     return {
       statusCode: 400,
       headers: corsHeaders,
-      body: JSON.stringify({ message: 'Missing required parameters: category, submissionUUID' }),
+      body: JSON.stringify({ message: 'Missing required parameter: submissionUUID' }),
     };
   }
 
   try {
     const result = await docClient.send(new GetCommand({
       TableName: process.env.PROCESSED_TEMP_TABLE_V2_NAME,
-      Key: { PK: category, SK: submissionUUID },
+      Key: { PK: 'PROCESSED', SK: submissionUUID },
     }));
     if (!result.Item) {
       return {
@@ -59,7 +58,6 @@ export const handler = async (event) => {
       statusCode: 200,
       headers: corsHeaders,
       body: JSON.stringify({
-        category: result.Item.PK,
         submissionUUID: result.Item.SK,
         proposed_grv_id: result.Item.proposed_grv_id ?? null,
         data: result.Item.data ?? null,

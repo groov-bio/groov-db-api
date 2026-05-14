@@ -58,7 +58,7 @@ const ligandSchema = Joi.object({
   ref_figure: Joi.string().pattern(refFigurePattern).required(),
   name: Joi.string().max(64).required(),
   SMILES: Joi.string().required(),
-  regulatory_effect: Joi.string().allow('', null).optional(),
+  regulatory_effect: Joi.string().valid('activates', 'represses').allow('', null).optional(),
   kd: Joi.number().allow(null).optional(),
 });
 
@@ -75,7 +75,7 @@ const operatorSchema = Joi.object({
 
 const lightStimulusSchema = Joi.object({
   wavelength: Joi.number().required(),
-  regulatory_effect: Joi.string().allow('', null).optional(),
+  regulatory_effect: Joi.string().valid('activates', 'represses').allow('', null).optional(),
   doi: Joi.string().allow('').optional(),
   method: Joi.string().allow('').optional(),
   ref_figure: Joi.string().pattern(refFigurePattern).allow('').optional(),
@@ -83,7 +83,7 @@ const lightStimulusSchema = Joi.object({
 
 const temperatureStimulusSchema = Joi.object({
   temperature: Joi.number().required(),
-  regulatory_effect: Joi.string().allow('', null).optional(),
+  regulatory_effect: Joi.string().valid('activates', 'represses').allow('', null).optional(),
   doi: Joi.string().allow('').optional(),
   method: Joi.string().allow('').optional(),
   ref_figure: Joi.string().pattern(refFigurePattern).allow('').optional(),
@@ -93,9 +93,7 @@ const proteinSchema = Joi.object({
   alias: Joi.string().max(16).pattern(new RegExp("^[A-Za-z0-9_.]+$")).required(),
   uniProtID: Joi.string().pattern(new RegExp("^[A-Za-z0-9_]+$")).required(),
   accession: Joi.string().pattern(new RegExp("^[A-Za-z0-9_.]+$")).required(),
-  mechanism: Joi.string()
-    .valid("Apo-repressor", "Apo-activator", "Co-repressor", "Co-activator")
-    .allow('', null).optional(),
+  family: Joi.string().valid("TetR", "LysR", "AraC", "MarR", "LacI", "GntR", "LuxR", "IclR", "Other").required(),
   ligands: Joi.array().items(ligandSchema).optional(),
   operators: Joi.array().items(operatorSchema).optional(),
   light_stimuli: Joi.array().items(lightStimulusSchema).optional(),
@@ -108,9 +106,9 @@ const proteinSchema = Joi.object({
 });
 
 const sensorSchema = Joi.object({
-  category: Joi.string()
-    .valid("TetR", "LysR", "AraC", "MarR", "LacI", "GntR", "LuxR", "IclR", "Other")
-    .required(),
+  mechanism: Joi.string()
+    .valid("Apo-repressor", "Apo-activator", "Co-repressor", "Co-activator")
+    .allow('', null).optional(),
   about: Joi.string().max(500).allow('', null).optional(),
   proteins: Joi.array().items(proteinSchema).min(1).required(),
 });
@@ -130,10 +128,10 @@ const inferType = (proteins, rna) => {
   return 'One Component';
 };
 
-const checkForProcessedDupe = async (category, submissionUUID) => {
+const checkForProcessedDupe = async (submissionUUID) => {
   const params = {
     TableName: process.env.PROCESSED_TEMP_TABLE_V2_NAME,
-    Key: { PK: category, SK: submissionUUID },
+    Key: { PK: 'PROCESSED', SK: submissionUUID },
   };
   const result = await docClient.send(new GetCommand(params));
   if (result.Item) throw new Error("Duplicate");
@@ -371,7 +369,7 @@ const buildReferences = (...enrichedGroups) => {
   return Array.from(refMap.values());
 };
 
-const buildProtein = (protein, enrichment) => {
+const buildProtein = (protein, enrichment, sensorMechanism) => {
   const { uniEntry, xrefData, enrichedLigands, enrichedOperators, enrichedLight, enrichedTemperature, enrichedStructures } = enrichment;
   const stimulus = [
     ...buildSmallMoleculeStimuli(enrichedLigands),
@@ -382,8 +380,9 @@ const buildProtein = (protein, enrichment) => {
     alias: protein.alias,
     uniprot_id: protein.uniProtID,
     refseq_id: protein.accession,
+    family: protein.family,
     kegg_id: xrefData.kegg ?? null,
-    regulation_type: protein.mechanism || null,
+    regulation_type: sensorMechanism || null,
     sequence: uniEntry.sequence?.value ?? null,
     stimulus,
     dna: buildDNA(enrichedOperators),
@@ -446,20 +445,19 @@ const constructV2Sensor = (sensor, perProteinEnrichment) => ({
   id: null,
   proposed_grv_id: null,
   type: inferType(sensor.proteins, null),
-  category: sensor.category,
   about: sensor.about ?? null,
-  proteins: sensor.proteins.map((p, i) => buildProtein(p, perProteinEnrichment[i])),
+  proteins: sensor.proteins.map((p, i) => buildProtein(p, perProteinEnrichment[i], sensor.mechanism)),
   rna: null,
   experiment: null,
   promoter: null,
   annotation: null,
 });
 
-const writeProcessedRow = async (category, submissionUUID, v2Sensor) => {
+const writeProcessedRow = async (submissionUUID, v2Sensor) => {
   const params = {
     TableName: process.env.PROCESSED_TEMP_TABLE_V2_NAME,
     Item: {
-      PK: category,
+      PK: 'PROCESSED',
       SK: submissionUUID,
       proposed_grv_id: null,
       data: v2Sensor,
@@ -520,7 +518,7 @@ export const handler = async (event) => {
   }
 
   try {
-    await checkForProcessedDupe(data.sensor.category, submissionUUID);
+    await checkForProcessedDupe(submissionUUID);
   } catch (err) {
     return errorBody(409, 'A processed entry already exists for this submission', corsHeaders);
   }
@@ -537,7 +535,7 @@ export const handler = async (event) => {
   const v2Sensor = constructV2Sensor(data.sensor, perProteinEnrichment);
 
   try {
-    await writeProcessedRow(data.sensor.category, submissionUUID, v2Sensor);
+    await writeProcessedRow(submissionUUID, v2Sensor);
   } catch (err) {
     logger.error('Write to processed temp failed', err);
     return errorBody(500, 'Error writing processed sensor row', corsHeaders);

@@ -34,11 +34,13 @@ afterAll(() => {
 describe('AddNewSensorV2 Function', () => {
   const SUB_UUID = 'sub-uuid-123';
 
+  // Per-protein: `family` required (not `mechanism`).
+  // Sensor level: `mechanism` (optional), no `category`.
   const validProtein = {
     alias: 'TestAlias',
     uniProtID: 'P12345',
     accession: 'TEST_ACC',
-    mechanism: 'Apo-repressor',
+    family: 'TetR',
     ligands: [{
       doi: '10.1234/ligand',
       method: 'EMSA',
@@ -56,7 +58,7 @@ describe('AddNewSensorV2 Function', () => {
 
   const validBody = {
     sensor: {
-      category: 'TetR',
+      mechanism: 'Apo-repressor',
       about: 'Test sensor description',
       proteins: [validProtein],
     },
@@ -185,7 +187,7 @@ describe('AddNewSensorV2 Function', () => {
 
     test('should return validation error for malformed sensor (missing required proteins)', async () => {
       const result = await handler(eventFor({
-        sensor: { category: 'TetR' },
+        sensor: { mechanism: 'Apo-repressor' },
         submissionUUID: SUB_UUID,
       }));
       expect(result.statusCode).toBe(400);
@@ -194,10 +196,10 @@ describe('AddNewSensorV2 Function', () => {
       expect(Array.isArray(body.errors)).toBe(true);
     });
 
-    test('should return validation error for invalid category', async () => {
+    test('should return validation error for invalid mechanism', async () => {
       const result = await handler(eventFor({
         ...validBody,
-        sensor: { ...validBody.sensor, category: 'INVALID_CATEGORY' },
+        sensor: { ...validBody.sensor, mechanism: 'INVALID_MECHANISM' },
       }));
       expect(result.statusCode).toBe(400);
       expect(JSON.parse(result.body).type).toBe('Validation Error');
@@ -261,21 +263,21 @@ describe('AddNewSensorV2 Function', () => {
     });
   });
 
-  describe('Duplicate checking (processed temp only — no prod check)', () => {
+  describe('Duplicate checking (processed temp — PK=PROCESSED)', () => {
     test('should return 409 when processed temp entry already exists', async () => {
-      docClientMock.on(GetCommand).resolves({ Item: { PK: 'TetR', SK: SUB_UUID } });
+      docClientMock.on(GetCommand).resolves({ Item: { PK: 'PROCESSED', SK: SUB_UUID } });
       const result = await handler(eventFor(validBody));
       expect(result.statusCode).toBe(409);
       expect(JSON.parse(result.body).message).toBe('A processed entry already exists for this submission');
     });
 
-    test('should query processed-temp table with PK=category and SK=submissionUUID', async () => {
+    test('should query processed-temp table with PK=PROCESSED and SK=submissionUUID', async () => {
       setupSuccessfulMocks();
       await handler(eventFor(validBody));
       const dupeCall = docClientMock.commandCalls(GetCommand)
         .find(c => c.args[0].input.TableName === 'test-processed-temp-v2-table');
       expect(dupeCall).toBeDefined();
-      expect(dupeCall.args[0].input.Key).toEqual({ PK: 'TetR', SK: SUB_UUID });
+      expect(dupeCall.args[0].input.Key).toEqual({ PK: 'PROCESSED', SK: SUB_UUID });
     });
   });
 
@@ -355,7 +357,7 @@ describe('AddNewSensorV2 Function', () => {
   });
 
   describe('Database write operations', () => {
-    test('should write a single PutCommand row to the processed-temp v2 table', async () => {
+    test('should write a single PutCommand row to the processed-temp v2 table with PK=PROCESSED', async () => {
       setupSuccessfulMocks();
       const result = await handler(eventFor(validBody));
       expect(result.statusCode).toBe(202);
@@ -365,7 +367,7 @@ describe('AddNewSensorV2 Function', () => {
       expect(putCalls.length).toBe(1);
       const input = putCalls[0].args[0].input;
       expect(input.TableName).toBe('test-processed-temp-v2-table');
-      expect(input.Item.PK).toBe('TetR');
+      expect(input.Item.PK).toBe('PROCESSED');
       expect(input.Item.SK).toBe(SUB_UUID);
       expect(input.Item.proposed_grv_id).toBeNull();
       expect(input.Item.data).toBeDefined();
@@ -378,7 +380,6 @@ describe('AddNewSensorV2 Function', () => {
       expect(written.id).toBeNull();
       expect(written.proposed_grv_id).toBeNull();
       expect(written.type).toBe('One Component');
-      expect(written.category).toBe('TetR');
       expect(Array.isArray(written.proteins)).toBe(true);
       expect(written.proteins[0].uniprot_id).toBe('P12345');
       expect(written.proteins[0].refseq_id).toBe('TEST_ACC');
@@ -435,13 +436,13 @@ describe('AddNewSensorV2 Function', () => {
       setupSuccessfulMocks();
       const minimalBody = {
         sensor: {
-          category: 'TetR',
+          mechanism: 'Apo-repressor',
           about: '',
           proteins: [{
             alias: 'TestAlias',
             uniProtID: 'P12345',
             accession: 'TEST_ACC',
-            mechanism: '',
+            family: 'TetR',
           }],
         },
         user: 'testuser',
