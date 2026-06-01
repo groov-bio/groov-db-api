@@ -29,7 +29,13 @@ Parameters:
     Type: String
   R2Endpoint:
     Type: String
-  
+  ProdTableV2Name:
+    Type: String
+    Default: groov_db_table_v2
+  R2KeyPrefix:
+    Type: String
+    Default: v2/
+
 Resources:
   GroovApi:
     Type: AWS::Serverless::HttpApi
@@ -1073,12 +1079,13 @@ Resources:
       Environment:
         Variables:
           PROCESSED_TEMP_TABLE_V2_NAME: !Ref GroovTempTableV2Processed
-          PROD_TABLE_V2_NAME: groov_db_table_v2
+          PROD_TABLE_V2_NAME: !Ref ProdTableV2Name
           ENV: !Ref Env
           R2_BUCKET_NAME: !Ref R2BucketName
           R2_ACCESS_KEY_ID: !Ref R2AccessKeyId
           R2_SECRET_ACCESS_KEY: !Ref R2SecretAccessKey
           R2_ENDPOINT: !Ref R2Endpoint
+          R2_KEY_PREFIX: !Ref R2KeyPrefix
           FINGERPRINT_LAMBDA_NAME: !Ref UpdateFingerprintV2Function
       Architectures:
         - arm64
@@ -1102,7 +1109,7 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref GroovTempTableV2Processed
         - DynamoDBCrudPolicy:
-            TableName: groov_db_table_v2
+            TableName: !Ref ProdTableV2Name
         - Statement:
             - Effect: Allow
               Action:
@@ -1163,6 +1170,7 @@ Resources:
           R2_ACCESS_KEY_ID: !Ref R2AccessKeyId
           R2_SECRET_ACCESS_KEY: !Ref R2SecretAccessKey
           R2_ENDPOINT: !Ref R2Endpoint
+          R2_KEY_PREFIX: !Ref R2KeyPrefix
       Architectures:
         - x86_64
       Policies:

@@ -102,4 +102,6 @@ jobs:
         R2AccessKeyId="${{ secrets[format('{0}_R2_ACCESS_KEY_ID', steps.env.outputs.env)] }}"
         R2SecretAccessKey="${{ secrets[format('{0}_R2_SECRET_ACCESS_KEY', steps.env.outputs.env)] }}"
         R2Endpoint="${{ secrets[format('{0}_R2_ENDPOINT', steps.env.outputs.env)] }}"
+        ProdTableV2Name="${{ secrets[format('{0}_TABLE_V2_NAME', steps.env.outputs.env)] }}"
+        R2KeyPrefix="${{ secrets[format('{0}_R2_KEY_PREFIX', steps.env.outputs.env)] }}"
         --no-confirm-changeset --no-fail-on-empty-changeset

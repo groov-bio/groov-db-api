@@ -22,6 +22,8 @@ const BUCKET = process.env.IS_LOCAL
   ? (process.env.S3_BUCKET_NAME || 'my-test-bucket')
   : process.env.R2_BUCKET_NAME;
 
+const KEY_PREFIX = process.env.R2_KEY_PREFIX ?? '';
+
 const streamToBuffer = (stream) =>
   new Promise((resolve, reject) => {
     const chunks = [];
@@ -31,7 +33,7 @@ const streamToBuffer = (stream) =>
   });
 
 const getJson = async (key) => {
-  const res = await s3Client.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
+  const res = await s3Client.send(new GetObjectCommand({ Bucket: BUCKET, Key: KEY_PREFIX + key }));
   const buf = await streamToBuffer(res.Body);
   return JSON.parse(buf.toString());
 };
@@ -39,7 +41,7 @@ const getJson = async (key) => {
 const putJson = (key, obj) =>
   s3Client.send(new PutObjectCommand({
     Bucket: BUCKET,
-    Key: key,
+    Key: KEY_PREFIX + key,
     Body: JSON.stringify(obj, null, 2),
     ContentType: 'application/json',
   }));

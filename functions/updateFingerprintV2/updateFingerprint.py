@@ -9,6 +9,8 @@ import boto3
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+R2_KEY_PREFIX = os.environ.get("R2_KEY_PREFIX", "")
+
 try:
     from rdkit import Chem
     from rdkit.Chem import rdFingerprintGenerator
@@ -38,23 +40,25 @@ def _get_s3_client():
 
 
 def download_file(s3_client, bucket, key, local_path):
+    prefixed_key = R2_KEY_PREFIX + key
     try:
-        logger.info(f"Downloading {key}")
-        s3_client.download_file(bucket, key, local_path)
+        logger.info(f"Downloading {prefixed_key}")
+        s3_client.download_file(bucket, prefixed_key, local_path)
         return True
     except Exception as e:
-        logger.error(f"Error downloading {key}: {e}")
+        logger.error(f"Error downloading {prefixed_key}: {e}")
         return False
 
 
 def upload_file(s3_client, bucket, local_path, key, content_type=None):
+    prefixed_key = R2_KEY_PREFIX + key
     try:
-        logger.info(f"Uploading {key}")
+        logger.info(f"Uploading {prefixed_key}")
         extra_args = {"ContentType": content_type} if content_type else {}
-        s3_client.upload_file(local_path, bucket, key, ExtraArgs=extra_args)
+        s3_client.upload_file(local_path, bucket, prefixed_key, ExtraArgs=extra_args)
         return True
     except Exception as e:
-        logger.error(f"Error uploading {key}: {e}")
+        logger.error(f"Error uploading {prefixed_key}: {e}")
         return False
 
 
