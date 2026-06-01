@@ -101,20 +101,24 @@ describe('ApproveProcessedSensorV2', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  test('400 when category missing', async () => {
-    const res = await handler(baseEvent({ body: JSON.stringify({ submissionUUID: 'u' }) }));
-    expect(res.statusCode).toBe(400);
-  });
-
   test('400 when submissionUUID missing', async () => {
-    const res = await handler(baseEvent({ body: JSON.stringify({ category: 'TetR' }) }));
+    const res = await handler(baseEvent({ body: JSON.stringify({}) }));
     expect(res.statusCode).toBe(400);
   });
 
-  test('400 when category is unknown', async () => {
-    const res = await handler(
-      baseEvent({ body: JSON.stringify({ category: 'Bogus', submissionUUID: 'u' }) }),
-    );
+  test('400 when processed row has an unknown category', async () => {
+    docClientMock.on(GetCommand).resolves({
+      Item: { PK: 'PROCESSED', SK: 'uuid-1', data: sampleData({ category: 'Bogus' }) },
+    });
+    const res = await handler(baseEvent());
+    expect(res.statusCode).toBe(400);
+  });
+
+  test('400 when processed row is missing a category', async () => {
+    docClientMock.on(GetCommand).resolves({
+      Item: { PK: 'PROCESSED', SK: 'uuid-1', data: sampleData({ category: undefined }) },
+    });
+    const res = await handler(baseEvent());
     expect(res.statusCode).toBe(400);
   });
 
@@ -161,7 +165,7 @@ describe('ApproveProcessedSensorV2', () => {
     expect(deleteCalls).toHaveLength(1);
     expect(deleteCalls[0].args[0].input).toMatchObject({
       TableName: 'test-processed-v2',
-      Key: { PK: 'TetR', SK: 'uuid-1' },
+      Key: { PK: 'PROCESSED', SK: 'uuid-1' },
     });
 
     expect(mockRegenerateStaticJSON).toHaveBeenCalledTimes(1);

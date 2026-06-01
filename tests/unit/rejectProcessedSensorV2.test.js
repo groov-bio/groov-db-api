@@ -55,21 +55,15 @@ describe('RejectProcessedSensorV2', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  test('returns 400 when category missing', async () => {
-    const res = await handler(baseEvent({ body: JSON.stringify({ submissionUUID: 'uuid-1' }) }));
-    expect(res.statusCode).toBe(400);
-    expect(JSON.parse(res.body).message).toMatch(/category/);
-  });
-
   test('returns 400 when submissionUUID missing', async () => {
-    const res = await handler(baseEvent({ body: JSON.stringify({ category: 'TetR' }) }));
+    const res = await handler(baseEvent({ body: JSON.stringify({}) }));
     expect(res.statusCode).toBe(400);
     expect(JSON.parse(res.body).message).toMatch(/submissionUUID/);
   });
 
-  test('returns 204 on successful delete and uses correct composite key', async () => {
+  test('returns 204 on successful delete and uses the PROCESSED key', async () => {
     docClientMock.on(DeleteCommand).resolves({
-      Attributes: { PK: 'TetR', SK: 'uuid-1', data: {} },
+      Attributes: { PK: 'PROCESSED', SK: 'uuid-1', data: {} },
     });
 
     const res = await handler(baseEvent());
@@ -79,7 +73,7 @@ describe('RejectProcessedSensorV2', () => {
 
     const call = docClientMock.calls()[0];
     expect(call.args[0].input.TableName).toBe('test-processed-v2-table');
-    expect(call.args[0].input.Key).toEqual({ PK: 'TetR', SK: 'uuid-1' });
+    expect(call.args[0].input.Key).toEqual({ PK: 'PROCESSED', SK: 'uuid-1' });
     expect(call.args[0].input.ReturnValues).toBe('ALL_OLD');
   });
 
