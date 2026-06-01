@@ -72,22 +72,21 @@ export const handler = async (event) => {
     return errBody(400, 'Invalid JSON in request body', corsHeaders);
   }
 
-  const { category, submissionUUID } = body;
-  if (!category || !submissionUUID) {
-    return errBody(400, 'Missing required fields: category, submissionUUID', corsHeaders);
-  }
-  if (!CATEGORY_PREFIX[category]) {
-    return errBody(400, `Unknown category: ${category}`, corsHeaders);
+  const { submissionUUID } = body;
+  if (!submissionUUID) {
+    return errBody(400, 'Missing required field: submissionUUID', corsHeaders);
   }
 
   const processedTable = process.env.PROCESSED_TEMP_TABLE_V2_NAME;
   const prodTable = process.env.PROD_TABLE_V2_NAME;
 
+  // Processed-temp rows are keyed PK="PROCESSED", SK=submissionUUID (see addNewSensorV2).
+  // The category is carried on the row's data blob, not the key.
   let processedRow;
   try {
     const res = await docClient.send(new GetCommand({
       TableName: processedTable,
-      Key: { PK: category, SK: submissionUUID },
+      Key: { PK: 'PROCESSED', SK: submissionUUID },
     }));
     processedRow = res.Item;
   } catch (err) {
@@ -104,6 +103,11 @@ export const handler = async (event) => {
   }
   if (data.id) {
     return errBody(409, `Sensor already has id: ${data.id}`, corsHeaders);
+  }
+
+  const category = data.category;
+  if (!category || !CATEGORY_PREFIX[category]) {
+    return errBody(400, `Unknown or missing category on processed row: ${category}`, corsHeaders);
   }
 
   const prefix = prefixFor(category, data);
@@ -142,7 +146,7 @@ export const handler = async (event) => {
   try {
     await docClient.send(new DeleteCommand({
       TableName: processedTable,
-      Key: { PK: category, SK: submissionUUID },
+      Key: { PK: 'PROCESSED', SK: submissionUUID },
     }));
   } catch (err) {
     console.log('Failed to delete processed-temp row (prod write succeeded):', err);

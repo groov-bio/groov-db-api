@@ -44,19 +44,20 @@ export const handler = async (event) => {
     };
   }
 
-  const { category, submissionUUID } = body;
-  if (!category || !submissionUUID) {
+  const { submissionUUID } = body;
+  if (!submissionUUID) {
     return {
       statusCode: 400,
       headers: corsHeaders,
-      body: JSON.stringify({ message: 'Missing required fields: category, submissionUUID' }),
+      body: JSON.stringify({ message: 'Missing required field: submissionUUID' }),
     };
   }
 
   try {
+    // Processed-temp rows are keyed PK="PROCESSED", SK=submissionUUID (see addNewSensorV2).
     const result = await docClient.send(new DeleteCommand({
       TableName: process.env.PROCESSED_TEMP_TABLE_V2_NAME,
-      Key: { PK: category, SK: submissionUUID },
+      Key: { PK: 'PROCESSED', SK: submissionUUID },
       ReturnValues: 'ALL_OLD',
     }));
     if (!result.Attributes) {
