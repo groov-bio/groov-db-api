@@ -105,7 +105,9 @@ export const handler = async (event) => {
     return errBody(409, `Sensor already has id: ${data.id}`, corsHeaders);
   }
 
-  const category = data.category;
+  // constructV2Sensor stores the category per-protein as `family`, not at the top level.
+  // Fall back to the first protein's family; tolerate a top-level `category` if present (migrated data).
+  const category = data.category ?? data.proteins?.[0]?.family;
   if (!category || !CATEGORY_PREFIX[category]) {
     return errBody(400, `Unknown or missing category on processed row: ${category}`, corsHeaders);
   }

@@ -204,6 +204,35 @@ describe('ApproveProcessedSensorV2', () => {
     expect(mockInvokeFingerprintAsync.mock.calls[0][0].category).toBe('Dual');
   });
 
+  test('derives category from proteins[].family when top-level category is absent (real addNewSensorV2 shape)', async () => {
+    mockMintNextGrvId.mockResolvedValueOnce('GRV-D00004');
+    // Mirrors what constructV2Sensor actually writes: no top-level `category`,
+    // category lives on each protein as `family`; two proteins => Two Component.
+    const data = {
+      id: null,
+      proposed_grv_id: null,
+      type: 'Two Component',
+      about: 'test',
+      proteins: [
+        { alias: 'BqsS', family: 'Other', uniprot_id: 'Q9I0I2', origin: [{ organism_name: 'P. aeruginosa' }], stimulus: [] },
+        { alias: 'BqrR', family: 'Other', uniprot_id: 'Q9I0I1', origin: [{ organism_name: 'P. aeruginosa' }], stimulus: [] },
+      ],
+    };
+    docClientMock.on(GetCommand).resolves({ Item: { PK: 'PROCESSED', SK: 'uuid-1', data } });
+    docClientMock.on(PutCommand).resolves({});
+    docClientMock.on(DeleteCommand).resolves({});
+
+    const res = await handler(baseEvent());
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.grv_id).toBe('GRV-D00004');
+    expect(body.category).toBe('Dual');
+    expect(mockMintNextGrvId.mock.calls[0][0]).toBe('D');
+    const item = docClientMock.commandCalls(PutCommand)[0].args[0].input.Item;
+    expect(item.category).toBe('Dual');
+  });
+
   test('single-component preserves original category in prod and data', async () => {
     docClientMock.on(GetCommand).resolves({
       Item: { PK: 'TetR', SK: 'uuid-1', data: sampleData() },
