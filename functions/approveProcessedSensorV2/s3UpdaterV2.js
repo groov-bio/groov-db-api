@@ -46,6 +46,11 @@ const putJson = (key, obj) =>
 
 const isNotFound = (err) => err?.name === 'NoSuchKey' || err?.Code === 'NoSuchKey' || err?.$metadata?.httpStatusCode === 404;
 
+// V2 published statics live under the `v2/` key prefix on R2 (the FE reads
+// https://groov-api.com/v2/index.json etc.). The bucket root holds the V1
+// files, so every V2 key must carry this prefix.
+const V2_PREFIX = 'v2/';
+
 // Walk V2 sensor proteins and collect unique ligand names.
 const collectLigandNames = (data) => {
   const names = new Set();
@@ -90,11 +95,12 @@ const buildFamilyIndexEntry = (data, grv_id) => {
 const updateMainIndex = async (data, category, grv_id) => {
   let index;
   try {
-    index = await getJson('index.json');
+    index = await getJson(`${V2_PREFIX}index.json`);
   } catch (err) {
     if (!isNotFound(err)) throw err;
     index = { stats: { regulators: 0, ligands: 0 }, sensors: [] };
   }
+  if (!Array.isArray(index.sensors)) index.sensors = [];
   const entry = buildIndexEntry(data, category, grv_id);
   const existing = index.sensors.findIndex((s) => s.id === grv_id);
   if (existing >= 0) index.sensors[existing] = entry;
@@ -104,11 +110,11 @@ const updateMainIndex = async (data, category, grv_id) => {
   index.sensors.forEach((s) => (s.ligands ?? []).forEach((l) => allLigands.add(l)));
   index.stats = { regulators: index.sensors.length, ligands: allLigands.size };
 
-  await putJson('index.json', index);
+  await putJson(`${V2_PREFIX}index.json`, index);
 };
 
 const updateFamilyIndex = async (data, category, grv_id) => {
-  const key = `indexes/${category.toLowerCase()}.json`;
+  const key = `${V2_PREFIX}indexes/${category.toLowerCase()}.json`;
   let familyIndex;
   try {
     familyIndex = await getJson(key);
@@ -125,13 +131,13 @@ const updateFamilyIndex = async (data, category, grv_id) => {
 };
 
 const saveSensorFile = async (data, category, grv_id) => {
-  await putJson(`sensors/${category.toLowerCase()}/${grv_id}.json`, data);
+  await putJson(`${V2_PREFIX}sensors/${category.toLowerCase()}/${grv_id}.json`, data);
 };
 
 const updateAllSensors = async (data) => {
   let all;
   try {
-    all = await getJson('all-sensors.json');
+    all = await getJson(`${V2_PREFIX}all-sensors.json`);
   } catch (err) {
     if (!isNotFound(err)) throw err;
     all = { version: new Date().toISOString(), count: 0, sensors: [] };
@@ -141,7 +147,7 @@ const updateAllSensors = async (data) => {
   else all.sensors.push(data);
   all.count = all.sensors.length;
   all.version = new Date().toISOString();
-  await putJson('all-sensors.json', all);
+  await putJson(`${V2_PREFIX}all-sensors.json`, all);
 };
 
 const zeroPad = (n, w) => String(n).padStart(w, '0');
@@ -152,7 +158,7 @@ const zeroPad = (n, w) => String(n).padStart(w, '0');
 export const mintNextGrvId = async (prefix) => {
   let index;
   try {
-    index = await getJson('index.json');
+    index = await getJson(`${V2_PREFIX}index.json`);
   } catch (err) {
     if (!isNotFound(err)) throw err;
     index = { sensors: [] };

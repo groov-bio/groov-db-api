@@ -121,8 +121,10 @@ def save_fingerprints(s3_client, bucket, fingerprints, work_dir):
         json.dump(fingerprints, f)
     with open(fp_path, "rb") as f_in, gzip.open(gz_path, "wb") as f_out:
         f_out.write(f_in.read())
-    ok1 = upload_file(s3_client, bucket, fp_path, "fingerprints.json", "application/json")
-    ok2 = upload_file(s3_client, bucket, gz_path, "fingerprints.json.gz", "application/gzip")
+    # V2 fingerprints live under the v2/ prefix so they don't clobber the live
+    # V1 fingerprints that the current ligandSearch serves from the bucket root.
+    ok1 = upload_file(s3_client, bucket, fp_path, "v2/fingerprints.json", "application/json")
+    ok2 = upload_file(s3_client, bucket, gz_path, "v2/fingerprints.json.gz", "application/gzip")
     return ok1 and ok2
 
 
@@ -150,7 +152,8 @@ def lambda_handler(event, context=None):
 
         with tempfile.TemporaryDirectory() as work_dir:
             all_sensors_path = os.path.join(work_dir, "all-sensors.json")
-            if not download_file(s3_client, bucket, "all-sensors.json", all_sensors_path):
+            # V2 sensor dump lives under the v2/ prefix on R2.
+            if not download_file(s3_client, bucket, "v2/all-sensors.json", all_sensors_path):
                 return {
                     "statusCode": 500,
                     "body": json.dumps({"error": "Failed to download all-sensors.json"}),

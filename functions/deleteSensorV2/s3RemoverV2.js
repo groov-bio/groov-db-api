@@ -46,6 +46,9 @@ const putJson = (key, obj) =>
 
 const isNotFound = (err) => err?.name === 'NoSuchKey' || err?.Code === 'NoSuchKey' || err?.$metadata?.httpStatusCode === 404;
 
+// V2 published statics live under the `v2/` key prefix on R2 (bucket root holds V1).
+const V2_PREFIX = 'v2/';
+
 export const removeStaticJSON = async (category, grv_id) => {
   const errors = [];
 
@@ -53,7 +56,7 @@ export const removeStaticJSON = async (category, grv_id) => {
   try {
     let index;
     try {
-      index = await getJson('index.json');
+      index = await getJson(`${V2_PREFIX}index.json`);
     } catch (err) {
       if (isNotFound(err)) {
         console.log('index.json not found, skipping');
@@ -67,7 +70,7 @@ export const removeStaticJSON = async (category, grv_id) => {
       const allLigands = new Set();
       index.sensors.forEach((s) => (s.ligands ?? []).forEach((l) => allLigands.add(l)));
       index.stats = { regulators: index.sensors.length, ligands: allLigands.size };
-      await putJson('index.json', index);
+      await putJson(`${V2_PREFIX}index.json`, index);
     }
   } catch (err) {
     console.log('Failed to update index.json:', err);
@@ -76,7 +79,7 @@ export const removeStaticJSON = async (category, grv_id) => {
 
   // 2. indexes/{category}.json — filter out the sensor, recompute count
   try {
-    const key = `indexes/${category.toLowerCase()}.json`;
+    const key = `${V2_PREFIX}indexes/${category.toLowerCase()}.json`;
     let familyIndex;
     try {
       familyIndex = await getJson(key);
@@ -100,7 +103,7 @@ export const removeStaticJSON = async (category, grv_id) => {
 
   // 3. sensors/{category}/{grv_id}.json — delete the object
   try {
-    const key = `sensors/${category.toLowerCase()}/${grv_id}.json`;
+    const key = `${V2_PREFIX}sensors/${category.toLowerCase()}/${grv_id}.json`;
     try {
       await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
     } catch (err) {
@@ -119,7 +122,7 @@ export const removeStaticJSON = async (category, grv_id) => {
   try {
     let all;
     try {
-      all = await getJson('all-sensors.json');
+      all = await getJson(`${V2_PREFIX}all-sensors.json`);
     } catch (err) {
       if (isNotFound(err)) {
         console.log('all-sensors.json not found, skipping');
@@ -132,7 +135,7 @@ export const removeStaticJSON = async (category, grv_id) => {
       all.sensors = (all.sensors ?? []).filter((s) => s.id !== grv_id);
       all.count = all.sensors.length;
       all.version = new Date().toISOString();
-      await putJson('all-sensors.json', all);
+      await putJson(`${V2_PREFIX}all-sensors.json`, all);
     }
   } catch (err) {
     console.log('Failed to update all-sensors.json:', err);
