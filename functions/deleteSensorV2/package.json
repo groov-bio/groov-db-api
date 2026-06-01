@@ -1,0 +1,6 @@
+{
+  "name": "deletesensorv2",
+  "version": "1.0.0",
+  "main": "deleteSensor.js",
+  "type": "module"
+}
