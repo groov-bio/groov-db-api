@@ -60,6 +60,8 @@ export const handler = async (event) => {
       body: JSON.stringify({
         submissionUUID: result.Item.SK,
         proposed_grv_id: result.Item.proposed_grv_id ?? null,
+        isEdit: result.Item.isEdit ?? false,
+        editTarget: result.Item.editTarget ?? null,
         data: result.Item.data ?? null,
       }),
     };

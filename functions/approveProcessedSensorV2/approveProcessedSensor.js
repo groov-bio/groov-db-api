@@ -101,6 +101,62 @@ export const handler = async (event) => {
   if (!data) {
     return errBody(500, 'Processed-temp row missing data field', corsHeaders);
   }
+
+  // ── Edit branch ──────────────────────────────────────────────────────────────
+  // Edit rows written by editSensorV2 carry isEdit=true and already have data.id set.
+  // Overwrite the existing prod row in place (same grv_id) — no minting required.
+  if (processedRow.isEdit) {
+    const grv_id = data.id ?? processedRow.editTarget?.grv_id;
+    const category = data.category ?? processedRow.editTarget?.category;
+
+    if (!grv_id || !category) {
+      return errBody(400, 'Edit row is missing grv_id or category', corsHeaders);
+    }
+
+    try {
+      await docClient.send(new PutCommand({
+        TableName: prodTable,
+        Item: { category, grv_id, data },
+        // Ensure we're overwriting an existing row, never creating one via this path.
+        ConditionExpression: 'attribute_exists(grv_id)',
+      }));
+    } catch (err) {
+      console.log(err);
+      if (err?.name === 'ConditionalCheckFailedException') {
+        return errBody(404, `No prod row found for ${grv_id} — cannot apply edit`, corsHeaders);
+      }
+      return errBody(500, 'Error writing to prod table', corsHeaders);
+    }
+
+    try {
+      await docClient.send(new DeleteCommand({
+        TableName: processedTable,
+        Key: { PK: 'PROCESSED', SK: submissionUUID },
+      }));
+    } catch (err) {
+      console.log('Failed to delete processed-temp edit row (prod write succeeded):', err);
+    }
+
+    try {
+      await regenerateStaticJSON(data, category, grv_id);
+    } catch (err) {
+      console.log('R2 static regen failed (prod write succeeded):', err);
+    }
+
+    try {
+      await invokeFingerprintAsync({ grv_id, category, data });
+    } catch (err) {
+      console.log('Fingerprint lambda invocation failed (prod write succeeded):', err);
+    }
+
+    return {
+      statusCode: 200,
+      headers: corsHeaders,
+      body: JSON.stringify({ message: 'Sensor edit approved', grv_id, category }),
+    };
+  }
+
+  // ── New-sensor branch (unchanged) ────────────────────────────────────────────
   if (data.id) {
     return errBody(409, `Sensor already has id: ${data.id}`, corsHeaders);
   }

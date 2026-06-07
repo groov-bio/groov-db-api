@@ -56,6 +56,8 @@ export const handler = async (event) => {
     const processed = items.map((item) => ({
       submissionUUID: item.SK,
       proposed_grv_id: item.proposed_grv_id ?? null,
+      isEdit: item.isEdit ?? false,
+      editTarget: item.editTarget ?? null,
       data: item.data ?? null,
     }));
     return {
