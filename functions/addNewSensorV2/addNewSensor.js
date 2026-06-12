@@ -73,20 +73,22 @@ const operatorSchema = Joi.object({
   kd: Joi.number().allow(null).optional(),
 });
 
+// Light/temperature evidence (DOI, figure, method) is required, matching the
+// ligand/operator requirements — these stimuli are backed by references too.
 const lightStimulusSchema = Joi.object({
   wavelength: Joi.number().required(),
   regulatory_effect: Joi.string().valid('activates', 'represses').allow('', null).optional(),
-  doi: Joi.string().allow('').optional(),
-  method: Joi.string().allow('').optional(),
-  ref_figure: Joi.string().pattern(refFigurePattern).allow('').optional(),
+  doi: Joi.string().required(),
+  method: Joi.string().required(),
+  ref_figure: Joi.string().pattern(refFigurePattern).required(),
 });
 
 const temperatureStimulusSchema = Joi.object({
   temperature: Joi.number().required(),
   regulatory_effect: Joi.string().valid('activates', 'represses').allow('', null).optional(),
-  doi: Joi.string().allow('').optional(),
-  method: Joi.string().allow('').optional(),
-  ref_figure: Joi.string().pattern(refFigurePattern).allow('').optional(),
+  doi: Joi.string().required(),
+  method: Joi.string().required(),
+  ref_figure: Joi.string().pattern(refFigurePattern).required(),
 });
 
 const proteinSchema = Joi.object({
