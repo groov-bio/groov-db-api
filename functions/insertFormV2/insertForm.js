@@ -89,8 +89,10 @@ const temperatureStimulusSchema = Joi.object({
 
 const proteinSchema = Joi.object({
   alias: Joi.string().max(16).pattern(new RegExp("^[A-Za-z0-9_.]+$")).required(),
-  uniProtID: Joi.string().pattern(new RegExp("^[A-Za-z0-9_]+$")).required(),
-  accession: Joi.string().pattern(new RegExp("^[A-Za-z0-9_.]+$")).required(),
+  // Optional (item 7): mutant/engineered proteins legitimately lack a UniProt
+  // or RefSeq ID. Pattern still applies when a value is supplied.
+  uniProtID: Joi.string().pattern(new RegExp("^[A-Za-z0-9_]+$")).allow('').optional(),
+  accession: Joi.string().pattern(new RegExp("^[A-Za-z0-9_.]+$")).allow('').optional(),
   family: Joi.string().valid("TetR", "LysR", "AraC", "MarR", "LacI", "GntR", "LuxR", "IclR", "Other").required(),
   ligands: Joi.array().items(ligandSchema).min(1).optional(),
   operators: Joi.array().items(operatorSchema).min(1).optional(),

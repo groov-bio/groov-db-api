@@ -93,8 +93,10 @@ const temperatureStimulusSchema = Joi.object({
 
 const proteinSchema = Joi.object({
   alias: Joi.string().max(16).pattern(new RegExp("^[A-Za-z0-9_.]+$")).required(),
-  uniProtID: Joi.string().pattern(new RegExp("^[A-Za-z0-9_]+$")).required(),
-  accession: Joi.string().pattern(new RegExp("^[A-Za-z0-9_.]+$")).required(),
+  // Optional (item 7): mutant/engineered proteins legitimately lack a UniProt
+  // or RefSeq ID. Enrichment degrades gracefully when these are absent.
+  uniProtID: Joi.string().pattern(new RegExp("^[A-Za-z0-9_]+$")).allow('').optional(),
+  accession: Joi.string().pattern(new RegExp("^[A-Za-z0-9_.]+$")).allow('').optional(),
   family: Joi.string().valid("TetR", "LysR", "AraC", "MarR", "LacI", "GntR", "LuxR", "IclR", "Other").required(),
   ligands: Joi.array().items(ligandSchema).optional(),
   operators: Joi.array().items(operatorSchema).optional(),
@@ -219,7 +221,9 @@ const processPDBId = async (id) => {
 };
 
 const tryXrefData = async (uniEntry, accession) => {
-  const xref = uniEntry.uniProtKBCrossReferences ?? [];
+  // uniEntry may be null when the protein has no uniProtID (item 7) — no xrefs,
+  // but operon resolution can still run off a user-supplied accession.
+  const xref = uniEntry?.uniProtKBCrossReferences ?? [];
 
   const pdbIds = [];
   let keggID = null;
@@ -380,12 +384,12 @@ const buildProtein = (protein, enrichment, sensorMechanism) => {
   ];
   return {
     alias: protein.alias,
-    uniprot_id: protein.uniProtID,
-    refseq_id: protein.accession,
+    uniprot_id: protein.uniProtID || null,
+    refseq_id: protein.accession || null,
     family: protein.family,
     kegg_id: xrefData.kegg ?? null,
     regulation_type: sensorMechanism || null,
-    sequence: uniEntry.sequence?.value ?? null,
+    sequence: uniEntry?.sequence?.value ?? null,
     stimulus,
     dna: buildDNA(enrichedOperators),
     context: buildContext(xrefData.operon),
@@ -399,8 +403,8 @@ const buildProtein = (protein, enrichment, sensorMechanism) => {
     ),
     origin: [{
       type: 'natural',
-      organism_id: uniEntry.organism?.taxonId ?? null,
-      organism_name: uniEntry.organism?.scientificName ?? null,
+      organism_id: uniEntry?.organism?.taxonId ?? null,
+      organism_name: uniEntry?.organism?.scientificName ?? null,
       parent_id: null,
       mutations: protein.mutations ?? [],
     }],
@@ -410,10 +414,17 @@ const buildProtein = (protein, enrichment, sensorMechanism) => {
 };
 
 const enrichProtein = async (protein) => {
+  // uniProtID and accession are optional (item 7). Normalize empty/whitespace
+  // to null so downstream lookups are skipped cleanly.
+  const uniProtID = protein.uniProtID?.trim() ? protein.uniProtID.trim() : null;
+  const accession = protein.accession?.trim() ? protein.accession.trim() : null;
+
   // Kick off all independent fetches concurrently. UniProt is awaited first so
   // its "no results" / non-OK errors take precedence over downstream DOI
-  // failures — preserves the original sequential failure ordering.
-  const uniDataP = callUniProtAPI(protein.uniProtID);
+  // failures — preserves the original sequential failure ordering. With no
+  // uniProtID we skip UniProt entirely and build the protein without a
+  // sequence / organism / KEGG / PDB / AlphaFold.
+  const uniDataP = uniProtID ? callUniProtAPI(uniProtID) : Promise.resolve(null);
   const ligandsP = enrichDOI(protein.ligands);
   const operatorsP = enrichDOI(protein.operators);
   const lightP = enrichDOI(protein.light_stimuli);
@@ -423,16 +434,19 @@ const enrichProtein = async (protein) => {
   for (const p of [ligandsP, operatorsP, lightP, temperatureP]) p.catch(() => {});
 
   const uniData = await uniDataP;
-  if (!uniData.results?.length) {
-    const err = new Error(`No UniProt results for ${protein.uniProtID}`);
-    err.statusCode = 400;
-    throw err;
+  let uniEntry = null;
+  if (uniProtID) {
+    if (!uniData.results?.length) {
+      const err = new Error(`No UniProt results for ${uniProtID}`);
+      err.statusCode = 400;
+      throw err;
+    }
+    uniEntry = uniData.results[0];
   }
-  const uniEntry = uniData.results[0];
 
   const [enrichedLigands, enrichedOperators, enrichedLight, enrichedTemperature, xrefData] = await Promise.all([
     ligandsP, operatorsP, lightP, temperatureP,
-    tryXrefData(uniEntry, protein.accession ?? null),
+    tryXrefData(uniEntry, accession),
   ]);
   const enrichedStructures = await Promise.all(
     (xrefData.structure ?? []).map(async (s) => ({
