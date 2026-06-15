@@ -292,6 +292,40 @@ describe('InsertFormV2 Function', () => {
       expect(result.statusCode).toBe(202);
     });
 
+    test('should accept a protein with no uniProtID / accession (item 7)', async () => {
+      docClientMock.on(PutCommand).resolves({});
+      const { uniProtID, accession, ...proteinNoIds } = validProtein;
+      const result = await handler(eventFor({
+        ...validBody,
+        sensor: { ...validBody.sensor, proteins: [proteinNoIds] },
+      }));
+      expect(result.statusCode).toBe(202);
+    });
+
+    test('should accept empty-string uniProtID / accession (item 7)', async () => {
+      docClientMock.on(PutCommand).resolves({});
+      const result = await handler(eventFor({
+        ...validBody,
+        sensor: {
+          ...validBody.sensor,
+          proteins: [{ ...validProtein, uniProtID: '', accession: '' }],
+        },
+      }));
+      expect(result.statusCode).toBe(202);
+    });
+
+    test('should still reject a malformed uniProtID when one is supplied', async () => {
+      const result = await handler(eventFor({
+        ...validBody,
+        sensor: {
+          ...validBody.sensor,
+          proteins: [{ ...validProtein, uniProtID: 'bad id!' }],
+        },
+      }));
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).type).toBe('Validation Error');
+    });
+
     test('should accept multi-protein submission', async () => {
       docClientMock.on(PutCommand).resolves({});
       const result = await handler(eventFor({
