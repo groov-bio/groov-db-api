@@ -342,6 +342,58 @@ describe('InsertFormV2 Function', () => {
     });
   });
 
+  describe('v2 schema — new experimental method', () => {
+    test('should accept Autophosphorylation assay as a ligand method', async () => {
+      docClientMock.on(PutCommand).resolves({});
+      const result = await handler(eventFor({
+        ...validBody,
+        sensor: {
+          ...validBody.sensor,
+          proteins: [{
+            ...validProtein,
+            ligands: [{ ...validProtein.ligands[0], method: 'Autophosphorylation assay' }],
+          }],
+        },
+      }));
+      expect(result.statusCode).toBe(202);
+    });
+  });
+
+  describe('v2 schema — two-component-only families (OmpR/HisKA)', () => {
+    const twoComponentBody = (families) => ({
+      ...validBody,
+      sensor: {
+        ...validBody.sensor,
+        mechanism: 'Signal transduction',
+        proteins: families.map((family, i) => ({
+          ...validProtein,
+          alias: `TestAlias${i + 1}`,
+          uniProtID: `P0000${i + 1}`,
+          accession: `TEST_ACC${i + 1}`,
+          family,
+        })),
+      },
+    });
+
+    test('should accept OmpR/HisKA when the sensor has two proteins', async () => {
+      docClientMock.on(PutCommand).resolves({});
+      const result = await handler(eventFor(twoComponentBody(['HisKA', 'OmpR'])));
+      expect(result.statusCode).toBe(202);
+    });
+
+    test('should reject OmpR on a single-protein submission', async () => {
+      const result = await handler(eventFor(twoComponentBody(['OmpR'])));
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).type).toBe('Validation Error');
+    });
+
+    test('should reject HisKA on a single-protein submission', async () => {
+      const result = await handler(eventFor(twoComponentBody(['HisKA'])));
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).type).toBe('Validation Error');
+    });
+  });
+
   describe('Database write operations', () => {
     test('should write a single PutCommand with PK=TEMP and SK=submissionUUID', async () => {
       docClientMock.on(PutCommand).resolves({});
