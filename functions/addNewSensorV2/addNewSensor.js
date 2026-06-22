@@ -53,7 +53,7 @@ const ligandSchema = Joi.object({
     "EMSA", "DNase footprinting", "Isothermal titration calorimetry",
     "Synthetic regulation", "Fluorescence polarization", "Surface plasmon resonance",
     "Thermal shift", "Spectrophotometric competition", "Spectral shift",
-    "DNA affinity chromatography",
+    "DNA affinity chromatography", "Autophosphorylation assay",
   ).required(),
   ref_figure: Joi.string().pattern(refFigurePattern).required(),
   name: Joi.string().max(64).required(),
@@ -97,7 +97,9 @@ const proteinSchema = Joi.object({
   // or RefSeq ID. Enrichment degrades gracefully when these are absent.
   uniProtID: Joi.string().pattern(new RegExp("^[A-Za-z0-9_]+$")).allow('').optional(),
   accession: Joi.string().pattern(new RegExp("^[A-Za-z0-9_.]+$")).allow('').optional(),
-  family: Joi.string().valid("TetR", "LysR", "AraC", "MarR", "LacI", "GntR", "LuxR", "IclR", "Other").required(),
+  // OmpR/HisKA are two-component-only structural families; the cross-protein
+  // count check lives on sensorSchema below.
+  family: Joi.string().valid("TetR", "LysR", "AraC", "MarR", "LacI", "GntR", "LuxR", "IclR", "Other", "OmpR", "HisKA").required(),
   ligands: Joi.array().items(ligandSchema).optional(),
   operators: Joi.array().items(operatorSchema).optional(),
   light_stimuli: Joi.array().items(lightStimulusSchema).optional(),
@@ -109,13 +111,26 @@ const proteinSchema = Joi.object({
   })).optional(),
 });
 
+// OmpR/HisKA proteins only exist as part of a two-component system, so a
+// single-protein submission can't use them.
+const TWO_COMPONENT_ONLY_FAMILIES = ["OmpR", "HisKA"];
+
 const sensorSchema = Joi.object({
+  // "Signal transduction" is auto-selected for two-component systems (2+ proteins)
+  // by the UI and accepted by insertFormV2, so it must be valid here too.
   mechanism: Joi.string()
-    .valid("Apo-repressor", "Apo-activator", "Co-repressor", "Co-activator")
+    .valid("Apo-repressor", "Apo-activator", "Co-repressor", "Co-activator", "Signal transduction")
     .allow('', null).optional(),
   about: Joi.string().max(500).allow('', null).optional(),
   proteins: Joi.array().items(proteinSchema).min(1).required(),
-});
+}).custom((value, helpers) => {
+  const proteins = value.proteins ?? [];
+  const usesTwoComponentFamily = proteins.some((p) => TWO_COMPONENT_ONLY_FAMILIES.includes(p?.family));
+  if (usesTwoComponentFamily && proteins.length < 2) {
+    return helpers.message('OmpR and HisKA families are only valid for two-component systems (2 or more proteins)');
+  }
+  return value;
+}, 'two-component family check');
 
 const mainSchema = Joi.object({
   sensor: sensorSchema.required(),

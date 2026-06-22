@@ -233,6 +233,36 @@ describe('ApproveProcessedSensorV2', () => {
     expect(item.category).toBe('Dual');
   });
 
+  test('two-component sensor with OmpR/HisKA families approves into the Dual bucket', async () => {
+    mockMintNextGrvId.mockResolvedValueOnce('GRV-D00005');
+    // OmpR/HisKA are the structural families of the individual proteins in a
+    // two-component system and are intentionally absent from CATEGORY_PREFIX.
+    // The sensor still collapses into the Dual bucket via type === 'Two Component'.
+    const data = {
+      id: null,
+      proposed_grv_id: null,
+      type: 'Two Component',
+      about: 'test',
+      proteins: [
+        { alias: 'EnvZ', family: 'HisKA', uniprot_id: 'P0AEJ4', origin: [{ organism_name: 'E. coli' }], stimulus: [] },
+        { alias: 'OmpR', family: 'OmpR', uniprot_id: 'P0AA16', origin: [{ organism_name: 'E. coli' }], stimulus: [] },
+      ],
+    };
+    docClientMock.on(GetCommand).resolves({ Item: { PK: 'PROCESSED', SK: 'uuid-1', data } });
+    docClientMock.on(PutCommand).resolves({});
+    docClientMock.on(DeleteCommand).resolves({});
+
+    const res = await handler(baseEvent());
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.grv_id).toBe('GRV-D00005');
+    expect(body.category).toBe('Dual');
+    expect(mockMintNextGrvId.mock.calls[0][0]).toBe('D');
+    const item = docClientMock.commandCalls(PutCommand)[0].args[0].input.Item;
+    expect(item.category).toBe('Dual');
+  });
+
   test('single-component preserves original category in prod and data', async () => {
     docClientMock.on(GetCommand).resolves({
       Item: { PK: 'TetR', SK: 'uuid-1', data: sampleData() },

@@ -409,6 +409,36 @@ describe('AddNewSensorV2 Function', () => {
       expect(written.proteins).toHaveLength(2);
     });
 
+    test('should accept the "Signal transduction" mechanism for a two-component system', async () => {
+      setupSuccessfulMocks();
+      const body = {
+        ...validBody,
+        sensor: {
+          ...validBody.sensor,
+          mechanism: 'Signal transduction',
+          proteins: [
+            { ...validProtein, family: 'HisKA' },
+            { ...validProtein, alias: 'TestAlias2', uniProtID: 'P67890', accession: 'TEST_ACC2', family: 'OmpR' },
+          ],
+        },
+      };
+      const result = await handler(eventFor(body));
+      expect(result.statusCode).toBe(202);
+      const written = docClientMock.commandCalls(PutCommand)[0].args[0].input.Item.data;
+      expect(written.type).toBe('Two Component');
+    });
+
+    test('should reject OmpR/HisKA families on a single-protein submission', async () => {
+      setupSuccessfulMocks();
+      const body = {
+        ...validBody,
+        sensor: { ...validBody.sensor, proteins: [{ ...validProtein, family: 'OmpR' }] },
+      };
+      const result = await handler(eventFor(body));
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).type).toBe('Validation Error');
+    });
+
     test('should return 500 when DynamoDB write fails', async () => {
       docClientMock.on(GetCommand).resolves({ Item: undefined });
       docClientMock.on(PutCommand).rejects(new Error('DynamoDB error'));
