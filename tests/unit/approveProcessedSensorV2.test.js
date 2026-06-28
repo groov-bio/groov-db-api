@@ -343,4 +343,259 @@ describe('ApproveProcessedSensorV2', () => {
     const res = await handler(baseEvent());
     expect(res.statusCode).toBe(200);
   });
+
+  describe('Edit branch (isEdit: true)', () => {
+    test('approving edit row overwrites prod with same grv_id, no minting, returns 200', async () => {
+      const editData = {
+        id: 'GRV-T00001',
+        category: 'TetR',
+        type: 'One Component',
+        about: 'updated about',
+        proteins: [
+          {
+            alias: 'UpdatedProtein',
+            uniprot_id: 'P00001',
+            kegg_id: 'some_updated_kegg',
+            origin: [{ organism_name: 'E. coli' }],
+            stimulus: [],
+          },
+        ],
+      };
+
+      docClientMock.on(GetCommand).resolves({
+        Item: {
+          PK: 'PROCESSED',
+          SK: 'EDIT#GRV-T00001',
+          isEdit: true,
+          editTarget: { category: 'TetR', grv_id: 'GRV-T00001' },
+          data: editData,
+        },
+      });
+      docClientMock.on(PutCommand).resolves({});
+      docClientMock.on(DeleteCommand).resolves({});
+
+      const res = await handler(baseEvent({ body: JSON.stringify({ submissionUUID: 'EDIT#GRV-T00001' }) }));
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.message).toBe('Sensor edit approved');
+      expect(body.grv_id).toBe('GRV-T00001');
+      expect(body.category).toBe('TetR');
+
+      // mintNextGrvId should NOT be called for edit branch
+      expect(mockMintNextGrvId).not.toHaveBeenCalled();
+
+      // PutCommand should overwrite prod with ConditionExpression attribute_exists
+      const putCalls = docClientMock.commandCalls(PutCommand);
+      expect(putCalls).toHaveLength(1);
+      const putInput = putCalls[0].args[0].input;
+      expect(putInput.TableName).toBe('groov_db_table_v2');
+      expect(putInput.Item.category).toBe('TetR');
+      expect(putInput.Item.grv_id).toBe('GRV-T00001');
+      expect(putInput.Item.data).toEqual(editData);
+      expect(putInput.ConditionExpression).toBe('attribute_exists(grv_id)');
+
+      // DeleteCommand should remove the processed temp row
+      const deleteCalls = docClientMock.commandCalls(DeleteCommand);
+      expect(deleteCalls).toHaveLength(1);
+      expect(deleteCalls[0].args[0].input).toMatchObject({
+        TableName: 'test-processed-v2',
+        Key: { PK: 'PROCESSED', SK: 'EDIT#GRV-T00001' },
+      });
+
+      // R2 regen and fingerprint invoke should still happen
+      expect(mockRegenerateStaticJSON).toHaveBeenCalledTimes(1);
+      expect(mockRegenerateStaticJSON.mock.calls[0]).toEqual([editData, 'TetR', 'GRV-T00001']);
+      expect(mockInvokeFingerprintAsync).toHaveBeenCalledTimes(1);
+      expect(mockInvokeFingerprintAsync.mock.calls[0][0]).toEqual({
+        grv_id: 'GRV-T00001',
+        category: 'TetR',
+        data: editData,
+      });
+    });
+
+    test('edit row with data.id set uses that id directly', async () => {
+      const editData = {
+        id: 'GRV-X00099',
+        category: 'LuxR',
+        type: 'One Component',
+        proteins: [{ uniprot_id: 'P12345', alias: 'TestAlias', family: 'LuxR' }],
+      };
+
+      docClientMock.on(GetCommand).resolves({
+        Item: {
+          PK: 'PROCESSED',
+          SK: 'EDIT#GRV-X00099',
+          isEdit: true,
+          editTarget: { category: 'LuxR', grv_id: 'GRV-X00099' },
+          data: editData,
+        },
+      });
+      docClientMock.on(PutCommand).resolves({});
+      docClientMock.on(DeleteCommand).resolves({});
+
+      const res = await handler(baseEvent({ body: JSON.stringify({ submissionUUID: 'EDIT#GRV-X00099' }) }));
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.grv_id).toBe('GRV-X00099');
+      expect(body.category).toBe('LuxR');
+
+      const putInput = docClientMock.commandCalls(PutCommand)[0].args[0].input;
+      expect(putInput.Item.grv_id).toBe('GRV-X00099');
+    });
+
+    test('edit row with missing grv_id in data falls back to editTarget', async () => {
+      const editData = {
+        // id not set
+        category: 'TetR',
+        type: 'One Component',
+        proteins: [{ uniprot_id: 'P12345', alias: 'TestAlias' }],
+      };
+
+      docClientMock.on(GetCommand).resolves({
+        Item: {
+          PK: 'PROCESSED',
+          SK: 'EDIT#GRV-FALLBACK',
+          isEdit: true,
+          editTarget: { category: 'TetR', grv_id: 'GRV-FALLBACK' },
+          data: editData,
+        },
+      });
+      docClientMock.on(PutCommand).resolves({});
+      docClientMock.on(DeleteCommand).resolves({});
+
+      const res = await handler(baseEvent({ body: JSON.stringify({ submissionUUID: 'EDIT#GRV-FALLBACK' }) }));
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.grv_id).toBe('GRV-FALLBACK');
+
+      const putInput = docClientMock.commandCalls(PutCommand)[0].args[0].input;
+      expect(putInput.Item.grv_id).toBe('GRV-FALLBACK');
+    });
+
+    test('edit branch returns 404 when prod row does not exist (ConditionalCheckFailedException)', async () => {
+      docClientMock.on(GetCommand).resolves({
+        Item: {
+          PK: 'PROCESSED',
+          SK: 'EDIT#GRV-NONEXISTENT',
+          isEdit: true,
+          editTarget: { category: 'TetR', grv_id: 'GRV-NONEXISTENT' },
+          data: {
+            id: 'GRV-NONEXISTENT',
+            category: 'TetR',
+            proteins: [{ uniprot_id: 'P12345', alias: 'TestAlias' }],
+          },
+        },
+      });
+
+      const condErr = new Error('Condition failed');
+      condErr.name = 'ConditionalCheckFailedException';
+      docClientMock.on(PutCommand).rejects(condErr);
+
+      const res = await handler(baseEvent({ body: JSON.stringify({ submissionUUID: 'EDIT#GRV-NONEXISTENT' }) }));
+
+      expect(res.statusCode).toBe(404);
+      const body = JSON.parse(res.body);
+      expect(body.message).toMatch(/No prod row found/);
+    });
+
+    test('edit branch returns 500 when PutCommand throws non-conditional error', async () => {
+      docClientMock.on(GetCommand).resolves({
+        Item: {
+          PK: 'PROCESSED',
+          SK: 'EDIT#GRV-T00001',
+          isEdit: true,
+          editTarget: { category: 'TetR', grv_id: 'GRV-T00001' },
+          data: {
+            id: 'GRV-T00001',
+            category: 'TetR',
+            proteins: [{ uniprot_id: 'P12345', alias: 'TestAlias' }],
+          },
+        },
+      });
+      docClientMock.on(PutCommand).rejects(new Error('prod write boom'));
+
+      const res = await handler(baseEvent({ body: JSON.stringify({ submissionUUID: 'EDIT#GRV-T00001' }) }));
+
+      expect(res.statusCode).toBe(500);
+      const body = JSON.parse(res.body);
+      expect(body.message).toMatch(/Error writing to prod table/);
+    });
+
+    test('edit branch returns 200 even when delete-temp throws', async () => {
+      docClientMock.on(GetCommand).resolves({
+        Item: {
+          PK: 'PROCESSED',
+          SK: 'EDIT#GRV-T00001',
+          isEdit: true,
+          editTarget: { category: 'TetR', grv_id: 'GRV-T00001' },
+          data: {
+            id: 'GRV-T00001',
+            category: 'TetR',
+            proteins: [{ uniprot_id: 'P12345', alias: 'TestAlias' }],
+          },
+        },
+      });
+      docClientMock.on(PutCommand).resolves({});
+      docClientMock.on(DeleteCommand).rejects(new Error('delete boom'));
+
+      const res = await handler(baseEvent({ body: JSON.stringify({ submissionUUID: 'EDIT#GRV-T00001' }) }));
+
+      expect(res.statusCode).toBe(200);
+      // Should still call PutCommand even though delete fails
+      expect(docClientMock.commandCalls(PutCommand)).toHaveLength(1);
+    });
+
+    test('edit branch returns 200 even when R2 regen throws', async () => {
+      docClientMock.on(GetCommand).resolves({
+        Item: {
+          PK: 'PROCESSED',
+          SK: 'EDIT#GRV-T00001',
+          isEdit: true,
+          editTarget: { category: 'TetR', grv_id: 'GRV-T00001' },
+          data: {
+            id: 'GRV-T00001',
+            category: 'TetR',
+            proteins: [{ uniprot_id: 'P12345', alias: 'TestAlias' }],
+          },
+        },
+      });
+      docClientMock.on(PutCommand).resolves({});
+      docClientMock.on(DeleteCommand).resolves({});
+      mockRegenerateStaticJSON.mockRejectedValueOnce(new Error('r2 boom'));
+
+      const res = await handler(baseEvent({ body: JSON.stringify({ submissionUUID: 'EDIT#GRV-T00001' }) }));
+
+      expect(res.statusCode).toBe(200);
+      // Prod write should still succeed
+      expect(docClientMock.commandCalls(PutCommand)).toHaveLength(1);
+    });
+
+    test('edit branch returns 200 even when fingerprint invoke throws', async () => {
+      docClientMock.on(GetCommand).resolves({
+        Item: {
+          PK: 'PROCESSED',
+          SK: 'EDIT#GRV-T00001',
+          isEdit: true,
+          editTarget: { category: 'TetR', grv_id: 'GRV-T00001' },
+          data: {
+            id: 'GRV-T00001',
+            category: 'TetR',
+            proteins: [{ uniprot_id: 'P12345', alias: 'TestAlias' }],
+          },
+        },
+      });
+      docClientMock.on(PutCommand).resolves({});
+      docClientMock.on(DeleteCommand).resolves({});
+      mockInvokeFingerprintAsync.mockRejectedValueOnce(new Error('lambda boom'));
+
+      const res = await handler(baseEvent({ body: JSON.stringify({ submissionUUID: 'EDIT#GRV-T00001' }) }));
+
+      expect(res.statusCode).toBe(200);
+      // Prod write should still succeed
+      expect(docClientMock.commandCalls(PutCommand)).toHaveLength(1);
+    });
+  });
 });

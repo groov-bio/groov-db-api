@@ -64,12 +64,38 @@ describe('GetProcessedTempV2', () => {
     expect(body).toEqual({
       submissionUUID: 'uuid-1',
       proposed_grv_id: 'GRV-ABC',
+      isEdit: false,
+      editTarget: null,
       data: { id: null, proteins: [{ uniprot_id: 'P12345' }] },
     });
 
     const call = docClientMock.calls()[0];
     expect(call.args[0].input.TableName).toBe('test-processed-v2-table');
     expect(call.args[0].input.Key).toEqual({ PK: 'PROCESSED', SK: 'uuid-1' });
+  });
+
+  test('returns edit row with isEdit true and editTarget set', async () => {
+    docClientMock.on(GetCommand).resolves({
+      Item: {
+        PK: 'PROCESSED',
+        SK: 'EDIT#GRV-123',
+        isEdit: true,
+        editTarget: { category: 'category-x', grv_id: 'GRV-123' },
+        data: { id: 'GRV-123', category: 'category-x', proteins: [{ uniprot_id: 'P12345' }] },
+      },
+    });
+
+    const res = await handler(baseEvent({ queryStringParameters: { submissionUUID: 'EDIT#GRV-123' } }));
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body).toEqual({
+      submissionUUID: 'EDIT#GRV-123',
+      isEdit: true,
+      editTarget: { category: 'category-x', grv_id: 'GRV-123' },
+      proposed_grv_id: null,
+      data: { id: 'GRV-123', category: 'category-x', proteins: [{ uniprot_id: 'P12345' }] },
+    });
   });
 
   test('returns 404 when row not found', async () => {
