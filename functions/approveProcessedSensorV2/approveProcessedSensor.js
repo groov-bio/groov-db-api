@@ -164,7 +164,12 @@ export const handler = async (event) => {
   // constructV2Sensor stores the category per-protein as `family`, not at the top level.
   // Fall back to the first protein's family; tolerate a top-level `category` if present (migrated data).
   const category = data.category ?? data.proteins?.[0]?.family;
-  if (!category || !CATEGORY_PREFIX[category]) {
+  // Two-component sensors collapse into the single 'Dual' bucket (prefix 'D')
+  // regardless of their per-protein structural families (e.g. OmpR, HisKA), so
+  // those families need not appear in CATEGORY_PREFIX — only single-component
+  // sensors must map to a known per-category prefix.
+  const isTwoComponent = data?.type === 'Two Component';
+  if (!category || (!isTwoComponent && !CATEGORY_PREFIX[category])) {
     return errBody(400, `Unknown or missing category on processed row: ${category}`, corsHeaders);
   }
 
