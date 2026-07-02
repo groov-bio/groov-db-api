@@ -208,7 +208,7 @@ Resources:
           USER_POOL_ID: !Ref UserPoolId
           USER_POOL_CLIENT_ID: !Ref UserPoolClientId
           TEMP_TABLE_V2_NAME: !Ref GroovTempTableV2
-          TABLE_NAME: !Ref TableName
+          PROD_TABLE_V2_NAME: groov_db_table_v2
           ENV: !Ref Env
       Architectures:
         - arm64
@@ -231,7 +231,7 @@ Resources:
         - !Ref NodeLayer
       Policies:
         - DynamoDBReadPolicy:
-            TableName: !Ref TableName
+            TableName: groov_db_table_v2
         - DynamoDBCrudPolicy:
             TableName: !Ref GroovTempTableV2
 

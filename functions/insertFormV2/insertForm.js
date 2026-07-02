@@ -1,6 +1,6 @@
 import Joi from 'joi';
 import crypto from 'crypto';
-import { PutCommand } from '@aws-sdk/lib-dynamodb';
+import { PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 
@@ -136,7 +136,61 @@ const mainSchema = Joi.object({
 }).options({ abortEarly: false });
 
 // Without a uniProtID GSI on raw temp, we'd need a Scan to dedupe. Skipped per
-// outstanding_questions.md Q1; processed-temp + (future) prod GSI are the gates.
+// outstanding_questions.md Q1; the prod checks below are the meaningful gate.
+
+// The v2 prod table (PROD_TABLE_V2_NAME) is the source of truth for duplicate
+// detection. It holds every sensor — single- and two-component — keyed
+// PK=category, SK=grv_id, with the proteins under data.proteins[]. The v1 table
+// is frozen and drifts as new sensors are added only in v2, so we must dedupe
+// against v2. A single-component sensor's category is its title-case structural
+// family (e.g. "TetR"); two-component sensors collapse into the "Dual" bucket.
+// There is no uniProtID GSI, so we Query the relevant (small) category
+// partition(s) and scan data.proteins[].uniprot_id for a match.
+
+// A submission is two-component ("Dual") when it carries more than one protein or
+// uses a two-component-only structural family — mirrors the type resolution in
+// addNewSensorV2 (proteins.length >= 2 → "Two Component").
+const isTwoComponentSubmission = (proteins) =>
+  proteins.length >= 2 ||
+  proteins.some((p) => TWO_COMPONENT_ONLY_FAMILIES.includes(p?.family));
+
+// The prod category partition(s) a submission's proteins would live in.
+const prodCategoriesFor = (proteins) => {
+  if (isTwoComponentSubmission(proteins)) return ['Dual'];
+  return [...new Set(proteins.map((p) => p.family))];
+};
+
+// Collect every uniprot_id present in a given prod category partition.
+const collectProdUniProtIDs = async (category) => {
+  const ids = new Set();
+  let lastKey;
+  do {
+    const res = await docClient.send(new QueryCommand({
+      TableName: process.env.PROD_TABLE_V2_NAME,
+      KeyConditionExpression: '#category = :category',
+      ExpressionAttributeNames: { '#category': 'category' },
+      ExpressionAttributeValues: { ':category': category },
+      ExclusiveStartKey: lastKey,
+    }));
+    for (const item of res?.Items ?? []) {
+      for (const protein of item.data?.proteins ?? []) {
+        if (protein?.uniprot_id) ids.add(protein.uniprot_id);
+      }
+    }
+    lastKey = res?.LastEvaluatedKey;
+  } while (lastKey);
+  return ids;
+};
+
+// Returns the uniProtID of the first submitted protein already present in prod, or null.
+const findProdDuplicate = async (proteins) => {
+  const existing = new Set();
+  for (const category of prodCategoriesFor(proteins)) {
+    for (const id of await collectProdUniProtIDs(category)) existing.add(id);
+  }
+  const dupe = proteins.find((p) => existing.has(p.uniProtID));
+  return dupe ? dupe.uniProtID : null;
+};
 
 const writeToTemp = async (submissionUUID, body) => {
   const params = {
@@ -180,6 +234,20 @@ export const handler = async (event) => {
       type: "Validation Error",
       errors: err.details.map((item) => item.message),
     }, corsHeaders);
+  }
+
+  try {
+    const duplicateId = await findProdDuplicate(body.sensor.proteins);
+    if (duplicateId) {
+      return returnErrorBody(
+        409,
+        `The uniProtID ${duplicateId} already exists in our database. If there's an issue, please submit a bug report.`,
+        corsHeaders,
+      );
+    }
+  } catch (err) {
+    console.log(err);
+    return returnErrorBody(500, "Error checking for duplicate submission. Please notify the administrators.", corsHeaders);
   }
 
   const submissionUUID = crypto.randomUUID();
