@@ -484,87 +484,40 @@ describe('AddNewSensorV2 Function', () => {
     });
   });
 
-  describe('Optional UniProt / RefSeq IDs (item 7)', () => {
-    test('should process a protein with no uniProtID — skips UniProt, null sequence/organism', async () => {
-      docClientMock.on(GetCommand).resolves({ Item: undefined });
-      docClientMock.on(PutCommand).resolves({});
-      // No UniProt entry in the mock set — only PDB / fallthrough.
-      mockFetch.mockImplementation((url) => {
-        if (url.includes('data.rcsb.org/graphql')) {
-          return Promise.resolve({ ok: true, json: () => Promise.resolve(mockPDBResponse) });
-        }
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
-      });
-      mockAcc2operon.mockResolvedValue(mockOperonResponse);
-      mockCiteInstance.format.mockReturnValue(JSON.stringify(mockCitationResponse));
-
+  describe('UniProt ID required, RefSeq optional (item 7)', () => {
+    test('should reject a protein with no uniProtID before any enrichment', async () => {
       const { uniProtID, ...proteinNoUni } = validProtein;
       const result = await handler(eventFor({
         ...validBody,
         sensor: { ...validBody.sensor, proteins: [proteinNoUni] },
       }));
-      expect(result.statusCode).toBe(202);
-
-      // UniProt must not be called when there's no uniProtID.
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).type).toBe('Validation Error');
+      // UniProt must not be called — validation fails first.
       const uniCall = mockFetch.mock.calls.find(c => String(c[0]).includes('rest.uniprot.org'));
       expect(uniCall).toBeUndefined();
-
-      const written = docClientMock.commandCalls(PutCommand)[0].args[0].input.Item.data;
-      const p = written.proteins[0];
-      expect(p.uniprot_id).toBeNull();
-      expect(p.refseq_id).toBe('TEST_ACC');
-      expect(p.sequence).toBeNull();
-      expect(p.kegg_id).toBeNull();
-      expect(p.structures).toEqual([]);
-      expect(p.origin[0].organism_id).toBeNull();
-      expect(p.origin[0].organism_name).toBeNull();
-      // Operon still resolves from the user-supplied accession.
-      expect(mockAcc2operon).toHaveBeenCalledWith('TEST_ACC');
     });
 
-    test('should skip operon entirely when neither accession nor uniProtID is present', async () => {
-      docClientMock.on(GetCommand).resolves({ Item: undefined });
-      docClientMock.on(PutCommand).resolves({});
-      mockFetch.mockImplementation(() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }));
-      mockCiteInstance.format.mockReturnValue(JSON.stringify(mockCitationResponse));
-
-      const { uniProtID, accession, ...proteinNoIds } = validProtein;
-      const result = await handler(eventFor({
-        ...validBody,
-        sensor: { ...validBody.sensor, proteins: [proteinNoIds] },
-      }));
-      expect(result.statusCode).toBe(202);
-      expect(mockAcc2operon).not.toHaveBeenCalled();
-
-      const written = docClientMock.commandCalls(PutCommand)[0].args[0].input.Item.data;
-      const p = written.proteins[0];
-      expect(p.uniprot_id).toBeNull();
-      expect(p.refseq_id).toBeNull();
-      expect(p.sequence).toBeNull();
-      expect(p.context).toEqual([]);
-      expect(p.structures).toEqual([]);
-    });
-
-    test('should treat empty-string ids the same as missing', async () => {
-      docClientMock.on(GetCommand).resolves({ Item: undefined });
-      docClientMock.on(PutCommand).resolves({});
-      mockFetch.mockImplementation(() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }));
-      mockCiteInstance.format.mockReturnValue(JSON.stringify(mockCitationResponse));
-
+    test('should reject an empty-string uniProtID', async () => {
       const result = await handler(eventFor({
         ...validBody,
         sensor: {
           ...validBody.sensor,
-          proteins: [{ ...validProtein, uniProtID: '', accession: '' }],
+          proteins: [{ ...validProtein, uniProtID: '' }],
         },
       }));
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).type).toBe('Validation Error');
+    });
+
+    test('should still process a protein with no accession when uniProtID is present', async () => {
+      setupSuccessfulMocks();
+      const { accession, ...proteinNoAccession } = validProtein;
+      const result = await handler(eventFor({
+        ...validBody,
+        sensor: { ...validBody.sensor, proteins: [proteinNoAccession] },
+      }));
       expect(result.statusCode).toBe(202);
-      const uniCall = mockFetch.mock.calls.find(c => String(c[0]).includes('rest.uniprot.org'));
-      expect(uniCall).toBeUndefined();
-      expect(mockAcc2operon).not.toHaveBeenCalled();
-      const p = docClientMock.commandCalls(PutCommand)[0].args[0].input.Item.data.proteins[0];
-      expect(p.uniprot_id).toBeNull();
-      expect(p.refseq_id).toBeNull();
     });
   });
 

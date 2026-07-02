@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import { mockClient } from 'aws-sdk-client-mock';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 
 const dynamoDbMock = mockClient(DynamoDBClient);
 const docClientMock = mockClient(DynamoDBDocumentClient);
@@ -23,7 +23,10 @@ describe('InsertFormV2 Function', () => {
     dynamoDbMock.reset();
     docClientMock.reset();
     process.env.TEMP_TABLE_V2_NAME = 'test-temp-v2-table';
+    process.env.PROD_TABLE_V2_NAME = 'test-prod-v2-table';
     delete process.env.IS_LOCAL;
+    // Default: prod dedup query finds nothing, so submissions proceed to write.
+    docClientMock.on(QueryCommand).resolves({ Items: [] });
   });
 
   afterEach(() => {
@@ -292,23 +295,36 @@ describe('InsertFormV2 Function', () => {
       expect(result.statusCode).toBe(202);
     });
 
-    test('should accept a protein with no uniProtID / accession (item 7)', async () => {
-      docClientMock.on(PutCommand).resolves({});
-      const { uniProtID, accession, ...proteinNoIds } = validProtein;
+    test('should reject a protein with no uniProtID (now required)', async () => {
+      const { uniProtID, ...proteinNoUniprot } = validProtein;
       const result = await handler(eventFor({
         ...validBody,
-        sensor: { ...validBody.sensor, proteins: [proteinNoIds] },
+        sensor: { ...validBody.sensor, proteins: [proteinNoUniprot] },
       }));
-      expect(result.statusCode).toBe(202);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).type).toBe('Validation Error');
     });
 
-    test('should accept empty-string uniProtID / accession (item 7)', async () => {
-      docClientMock.on(PutCommand).resolves({});
+    test('should reject an empty-string uniProtID', async () => {
       const result = await handler(eventFor({
         ...validBody,
         sensor: {
           ...validBody.sensor,
-          proteins: [{ ...validProtein, uniProtID: '', accession: '' }],
+          proteins: [{ ...validProtein, uniProtID: '' }],
+        },
+      }));
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).type).toBe('Validation Error');
+    });
+
+    test('should accept a missing/empty RefSeq (accession) when uniProtID is present', async () => {
+      docClientMock.on(PutCommand).resolves({});
+      const { accession, ...proteinNoAccession } = validProtein;
+      const result = await handler(eventFor({
+        ...validBody,
+        sensor: {
+          ...validBody.sensor,
+          proteins: [{ ...proteinNoAccession, accession: '' }],
         },
       }));
       expect(result.statusCode).toBe(202);
@@ -425,6 +441,92 @@ describe('InsertFormV2 Function', () => {
       const result = await handler(eventFor(validBody));
       expect(result.statusCode).toBe(500);
       expect(JSON.parse(result.body).message).toBe('Error processing submission. Please notify the administrators.');
+    });
+  });
+
+  describe('Duplicate detection (prod)', () => {
+    const prodRowWith = (uniprot_id, category = 'TetR', grv_id = 'GRV-T00001') => ({
+      category,
+      grv_id,
+      data: { proteins: [{ uniprot_id }] },
+    });
+
+    test('rejects with 409 when a protein already exists in prod', async () => {
+      docClientMock.on(QueryCommand).resolves({ Items: [prodRowWith('U2Y8G0')] });
+      const result = await handler(eventFor({
+        ...validBody,
+        sensor: { ...validBody.sensor, proteins: [{ ...validProtein, uniProtID: 'U2Y8G0' }] },
+      }));
+      expect(result.statusCode).toBe(409);
+      expect(JSON.parse(result.body).message).toContain('U2Y8G0');
+      // Must not write to temp when a duplicate is found.
+      expect(docClientMock.commandCalls(PutCommand).length).toBe(0);
+    });
+
+    test('queries the submitted protein\'s family category partition', async () => {
+      await handler(eventFor(validBody));
+      const queryCalls = docClientMock.commandCalls(QueryCommand);
+      expect(queryCalls.length).toBe(1);
+      const input = queryCalls[0].args[0].input;
+      expect(input.TableName).toBe('test-prod-v2-table');
+      expect(input.ExpressionAttributeValues[':category']).toBe('TetR');
+    });
+
+    test('two-component submissions dedupe against the "Dual" partition', async () => {
+      const twoComponent = {
+        ...validBody,
+        sensor: {
+          ...validBody.sensor,
+          mechanism: 'Signal transduction',
+          proteins: [
+            { ...validProtein, uniProtID: 'P00001', alias: 'A1', accession: 'ACC1', family: 'HisKA' },
+            { ...validProtein, uniProtID: 'P00002', alias: 'A2', accession: 'ACC2', family: 'OmpR' },
+          ],
+        },
+      };
+      await handler(eventFor(twoComponent));
+      const queryCalls = docClientMock.commandCalls(QueryCommand);
+      expect(queryCalls.length).toBe(1);
+      expect(queryCalls[0].args[0].input.ExpressionAttributeValues[':category']).toBe('Dual');
+    });
+
+    test('rejects a two-component submission whose protein exists in the Dual partition', async () => {
+      docClientMock.on(QueryCommand).resolves({ Items: [prodRowWith('P00002', 'Dual', 'GRV-D00001')] });
+      const twoComponent = {
+        ...validBody,
+        sensor: {
+          ...validBody.sensor,
+          mechanism: 'Signal transduction',
+          proteins: [
+            { ...validProtein, uniProtID: 'P00001', alias: 'A1', accession: 'ACC1', family: 'HisKA' },
+            { ...validProtein, uniProtID: 'P00002', alias: 'A2', accession: 'ACC2', family: 'OmpR' },
+          ],
+        },
+      };
+      const result = await handler(eventFor(twoComponent));
+      expect(result.statusCode).toBe(409);
+      expect(JSON.parse(result.body).message).toContain('P00002');
+    });
+
+    test('paginates the prod query via LastEvaluatedKey', async () => {
+      docClientMock
+        .on(QueryCommand)
+        .resolvesOnce({ Items: [prodRowWith('OTHER1')], LastEvaluatedKey: { category: 'TetR', grv_id: 'GRV-T00001' } })
+        .resolvesOnce({ Items: [prodRowWith('U2Y8G0')] });
+      const result = await handler(eventFor({
+        ...validBody,
+        sensor: { ...validBody.sensor, proteins: [{ ...validProtein, uniProtID: 'U2Y8G0' }] },
+      }));
+      expect(result.statusCode).toBe(409);
+      expect(docClientMock.commandCalls(QueryCommand).length).toBe(2);
+    });
+
+    test('returns 500 when the prod dedup query fails', async () => {
+      docClientMock.on(QueryCommand).rejects(new Error('Query failed'));
+      const result = await handler(eventFor(validBody));
+      expect(result.statusCode).toBe(500);
+      expect(JSON.parse(result.body).message).toBe('Error checking for duplicate submission. Please notify the administrators.');
+      expect(docClientMock.commandCalls(PutCommand).length).toBe(0);
     });
   });
 
