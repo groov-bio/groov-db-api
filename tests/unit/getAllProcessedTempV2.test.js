@@ -61,6 +61,8 @@ describe('GetAllProcessedTempV2', () => {
     expect(body.processed[0]).toEqual({
       submissionUUID: 'uuid-1',
       proposed_grv_id: null,
+      isEdit: false,
+      editTarget: null,
       data: { id: null, type: 'One Component', proteins: [] },
     });
     expect(body.processed[1].proposed_grv_id).toBe('GRV-XYZ');
@@ -93,6 +95,39 @@ describe('GetAllProcessedTempV2', () => {
     expect(docClientMock.calls()[1].args[0].input.ExclusiveStartKey).toEqual({ PK: 'PROCESSED', SK: 'uuid-1' });
   });
 
+  test('includes edit rows with isEdit true and editTarget set', async () => {
+    docClientMock.on(ScanCommand).resolves({
+      Items: [
+        {
+          PK: 'PROCESSED',
+          SK: 'uuid-regular',
+          proposed_grv_id: null,
+          data: { id: null, type: 'One Component', proteins: [] },
+        },
+        {
+          PK: 'PROCESSED',
+          SK: 'EDIT#GRV-123',
+          isEdit: true,
+          editTarget: { category: 'category-x', grv_id: 'GRV-123' },
+          data: { id: 'GRV-123', category: 'category-x', proteins: [] },
+        },
+      ],
+    });
+
+    const res = await handler(baseEvent());
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.processed).toHaveLength(2);
+    expect(body.processed[1]).toEqual({
+      submissionUUID: 'EDIT#GRV-123',
+      isEdit: true,
+      editTarget: { category: 'category-x', grv_id: 'GRV-123' },
+      proposed_grv_id: null,
+      data: { id: 'GRV-123', category: 'category-x', proteins: [] },
+    });
+  });
+
   test('returns 500 when scan throws', async () => {
     docClientMock.on(ScanCommand).rejects(new Error('boom'));
     const res = await handler(baseEvent());
@@ -108,6 +143,8 @@ describe('GetAllProcessedTempV2', () => {
     expect(body.processed[0]).toEqual({
       submissionUUID: 'uuid-1',
       proposed_grv_id: null,
+      isEdit: false,
+      editTarget: null,
       data: null,
     });
   });

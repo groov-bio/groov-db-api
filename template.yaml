@@ -235,7 +235,46 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref GroovTempTableV2
 
-  GetTempSensorFunction: 
+  EditSensorV2Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/editSensorV2
+      Handler: editSensor.handler
+      Runtime: nodejs20.x
+      MemorySize: 128
+      Timeout: 10
+      FunctionName: !Sub ${Env}-edit-sensor-v2-function
+      Environment:
+        Variables:
+          PROD_TABLE_V2_NAME: groov_db_table_v2
+          PROCESSED_TEMP_TABLE_V2_NAME: !Ref GroovTempTableV2Processed
+          ENV: !Ref Env
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/editSensor
+            Method: post
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        OptionsApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/editSensor
+            Method: options
+      Layers:
+        - !Ref NodeLayer
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: groov_db_table_v2
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GroovTempTableV2Processed
+
+  GetTempSensorFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/getTempSensor
