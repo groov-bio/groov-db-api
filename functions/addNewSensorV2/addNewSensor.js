@@ -93,9 +93,11 @@ const temperatureStimulusSchema = Joi.object({
 
 const proteinSchema = Joi.object({
   alias: Joi.string().max(16).pattern(new RegExp("^[A-Za-z0-9_.]+$")).required(),
-  // Optional (item 7): mutant/engineered proteins legitimately lack a UniProt
-  // or RefSeq ID. Enrichment degrades gracefully when these are absent.
-  uniProtID: Joi.string().pattern(new RegExp("^[A-Za-z0-9_]+$")).allow('').optional(),
+  // UniProt ID is required: the protein's sequence, structures, cross-references
+  // and operon are all derived from the UniProt call, so it cannot be blank.
+  // RefSeq is optional (mutant/engineered proteins may lack one); enrichment
+  // degrades gracefully when it is absent.
+  uniProtID: Joi.string().pattern(new RegExp("^[A-Za-z0-9_]+$")).required(),
   accession: Joi.string().pattern(new RegExp("^[A-Za-z0-9_.]+$")).allow('').optional(),
   // OmpR/HisKA are two-component-only structural families; the cross-protein
   // count check lives on sensorSchema below.

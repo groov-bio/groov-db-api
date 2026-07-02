@@ -292,23 +292,36 @@ describe('InsertFormV2 Function', () => {
       expect(result.statusCode).toBe(202);
     });
 
-    test('should accept a protein with no uniProtID / accession (item 7)', async () => {
-      docClientMock.on(PutCommand).resolves({});
-      const { uniProtID, accession, ...proteinNoIds } = validProtein;
+    test('should reject a protein with no uniProtID (now required)', async () => {
+      const { uniProtID, ...proteinNoUniprot } = validProtein;
       const result = await handler(eventFor({
         ...validBody,
-        sensor: { ...validBody.sensor, proteins: [proteinNoIds] },
+        sensor: { ...validBody.sensor, proteins: [proteinNoUniprot] },
       }));
-      expect(result.statusCode).toBe(202);
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).type).toBe('Validation Error');
     });
 
-    test('should accept empty-string uniProtID / accession (item 7)', async () => {
-      docClientMock.on(PutCommand).resolves({});
+    test('should reject an empty-string uniProtID', async () => {
       const result = await handler(eventFor({
         ...validBody,
         sensor: {
           ...validBody.sensor,
-          proteins: [{ ...validProtein, uniProtID: '', accession: '' }],
+          proteins: [{ ...validProtein, uniProtID: '' }],
+        },
+      }));
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).type).toBe('Validation Error');
+    });
+
+    test('should accept a missing/empty RefSeq (accession) when uniProtID is present', async () => {
+      docClientMock.on(PutCommand).resolves({});
+      const { accession, ...proteinNoAccession } = validProtein;
+      const result = await handler(eventFor({
+        ...validBody,
+        sensor: {
+          ...validBody.sensor,
+          proteins: [{ ...proteinNoAccession, accession: '' }],
         },
       }));
       expect(result.statusCode).toBe(202);
