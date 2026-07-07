@@ -175,31 +175,36 @@ describe('EditSensorV2', () => {
     expect(body.message).toMatch(/Protein uniprot_ids cannot be changed/);
   });
 
-  test('Changing sensor type returns 400 (read-only)', async () => {
+  test('Client attempt to change sensor type is overwritten with prod value', async () => {
     docClientMock.on(GetCommand).resolves({ Item: prodRowWithSameProteins });
+    docClientMock.on(PutCommand).resolves({});
     const res = await handler(baseEvent({
-      data: { ...validData, type: 'Two Component' },
+      data: { ...validData, type: 'Two Component' }, // prod is 'One Component'
     }));
-    expect(res.statusCode).toBe(400);
-    expect(JSON.parse(res.body).message).toMatch(/Sensor type is read-only/);
+    expect(res.statusCode).toBe(202);
+    const putInput = docClientMock.commandCalls(PutCommand)[0].args[0].input;
+    expect(putInput.Item.data.type).toBe('One Component'); // forced back to prod
   });
 
-  test('Changing a read-only protein field (family) returns 400', async () => {
+  test('Client attempt to change a read-only protein field (family) is overwritten', async () => {
     docClientMock.on(GetCommand).resolves({ Item: prodRowWithSameProteins });
+    docClientMock.on(PutCommand).resolves({});
     const res = await handler(baseEvent({
       data: {
         ...validData,
         proteins: [
-          { uniprot_id: 'P12345', alias: 'TestProtein', family: 'MarR' }, // family changed
+          { uniprot_id: 'P12345', alias: 'TestProtein', family: 'MarR' }, // tampered
           { uniprot_id: 'P67890', alias: 'AnotherProtein', family: 'TetR' },
         ],
       },
     }));
-    expect(res.statusCode).toBe(400);
-    expect(JSON.parse(res.body).message).toMatch(/Protein "family" is read-only/);
+    expect(res.statusCode).toBe(202);
+    const putInput = docClientMock.commandCalls(PutCommand)[0].args[0].input;
+    const p1 = putInput.Item.data.proteins.find((p) => p.uniprot_id === 'P12345');
+    expect(p1.family).toBe('TetR'); // forced back to prod, not 'MarR'
   });
 
-  test('Editing only allowed fields (alias, regulation_type) returns 202', async () => {
+  test('Editable fields (alias, regulation_type) pass through unchanged', async () => {
     docClientMock.on(GetCommand).resolves({ Item: prodRowWithSameProteins });
     docClientMock.on(PutCommand).resolves({});
     const res = await handler(baseEvent({
@@ -212,6 +217,40 @@ describe('EditSensorV2', () => {
       },
     }));
     expect(res.statusCode).toBe(202);
+    const putInput = docClientMock.commandCalls(PutCommand)[0].args[0].input;
+    const p1 = putInput.Item.data.proteins.find((p) => p.uniprot_id === 'P12345');
+    expect(p1.alias).toBe('RenamedProtein');
+    expect(p1.regulation_type).toBe('Activator');
+  });
+
+  test('Read-only field drift: prod sequence differs but user did not touch it → 202, prod value kept', async () => {
+    docClientMock.on(GetCommand).resolves({
+      Item: {
+        ...prodRowWithSameProteins,
+        data: {
+          ...prodRowWithSameProteins.data,
+          proteins: [
+            { uniprot_id: 'P12345', alias: 'ProdVersion1', family: 'TetR', sequence: 'PRODSEQ' },
+            { uniprot_id: 'P67890', alias: 'ProdVersion2', family: 'TetR' },
+          ],
+        },
+      },
+    });
+    docClientMock.on(PutCommand).resolves({});
+    // Client submits the copy it loaded (a different sequence), unchanged by the user.
+    const res = await handler(baseEvent({
+      data: {
+        ...validData,
+        proteins: [
+          { uniprot_id: 'P12345', alias: 'TestProtein', family: 'TetR', sequence: 'LOADEDSEQ' },
+          { uniprot_id: 'P67890', alias: 'AnotherProtein', family: 'TetR' },
+        ],
+      },
+    }));
+    expect(res.statusCode).toBe(202);
+    const putInput = docClientMock.commandCalls(PutCommand)[0].args[0].input;
+    const p1 = putInput.Item.data.proteins.find((p) => p.uniprot_id === 'P12345');
+    expect(p1.sequence).toBe('PRODSEQ'); // forced to prod value, no false rejection
   });
 
   test('Happy path: valid edit submission returns 202', async () => {

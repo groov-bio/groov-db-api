@@ -213,12 +213,14 @@ export const handler = async (event) => {
     return errBody(400, 'Protein uniprot_ids cannot be changed in an edit', corsHeaders);
   }
 
-  // Read-only fields cannot be changed in an edit — enforced server-side to mirror
-  // the locked fields in the edit form. Only About (sensor) and Alias / Regulation
-  // type (protein) are editable identity fields.
-  if ((data.type ?? null) !== (prodRow.data?.type ?? null)) {
-    return errBody(400, 'Sensor type is read-only and cannot be changed', corsHeaders);
-  }
+  // Read-only fields cannot be changed in an edit. The edit form renders them
+  // read-only; we also enforce it server-side by forcing each back to the current
+  // prod value. We overwrite rather than reject on mismatch: the editor loads the
+  // sensor from the R2 static JSON, which can drift from the prod table for a
+  // field the user never touched — rejecting would falsely block a valid edit,
+  // whereas overwriting still guarantees these fields can't be changed.
+  // Only About (sensor) and Alias / Regulation type (protein) stay editable.
+  if ('type' in (prodRow.data ?? {})) data.type = prodRow.data.type;
   const prodProteinsByUniprot = new Map(
     (prodRow.data?.proteins ?? []).map((p) => [p.uniprot_id, p])
   );
@@ -227,9 +229,7 @@ export const handler = async (event) => {
     const prodProtein = prodProteinsByUniprot.get(editProtein.uniprot_id);
     if (!prodProtein) continue; // uniprot set already validated to match above
     for (const field of READ_ONLY_PROTEIN_FIELDS) {
-      if ((editProtein[field] ?? null) !== (prodProtein[field] ?? null)) {
-        return errBody(400, `Protein "${field}" is read-only and cannot be changed`, corsHeaders);
-      }
+      if (field in prodProtein) editProtein[field] = prodProtein[field];
     }
   }
 
