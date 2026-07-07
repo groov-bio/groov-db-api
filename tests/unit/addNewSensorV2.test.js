@@ -388,6 +388,17 @@ describe('AddNewSensorV2 Function', () => {
       expect(Array.isArray(written.proteins[0].references)).toBe(true);
       expect(Array.isArray(written.proteins[0].structures)).toBe(true);
       expect(Array.isArray(written.proteins[0].origin)).toBe(true);
+      // Stimulus uses snake_case stimulus_type (matches the V2 contract), never the
+      // legacy camelCase stimulusType.
+      expect(JSON.stringify(written)).not.toContain('"stimulusType"');
+      for (const stim of written.proteins[0].stimulus) {
+        if ('small_molecule' in stim || 'light' in stim || 'temperature' in stim) continue;
+        expect(Array.isArray(stim.stimulus_type)).toBe(true);
+      }
+      // interaction is deprecated dead data — new sensors no longer populate it.
+      for (const ref of written.proteins[0].references) {
+        expect(ref.interaction).toEqual([]);
+      }
     });
 
     test('should infer Two Component when sensor has 2 proteins', async () => {

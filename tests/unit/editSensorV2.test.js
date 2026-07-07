@@ -253,6 +253,90 @@ describe('EditSensorV2', () => {
     expect(p1.sequence).toBe('PRODSEQ'); // forced to prod value, no false rejection
   });
 
+  test('References are forced back to prod: edit-form flattened interaction does not land in prod', async () => {
+    const prodReferences = [{
+      title: 'A paper',
+      doi: '10.1/x',
+      // Legacy dead data: interaction is an array of rich objects in prod.
+      interaction: [{ figure: 'Figure 1', interaction_type: 'Stimulus', method: 'EMSA' }],
+    }];
+    docClientMock.on(GetCommand).resolves({
+      Item: {
+        ...prodRowWithSameProteins,
+        data: {
+          ...prodRowWithSameProteins.data,
+          proteins: [
+            { uniprot_id: 'P12345', alias: 'ProdVersion1', family: 'TetR', references: prodReferences },
+            { uniprot_id: 'P67890', alias: 'ProdVersion2', family: 'TetR' },
+          ],
+        },
+      },
+    });
+    docClientMock.on(PutCommand).resolves({});
+    // The edit form submits references with interaction flattened to bare strings.
+    const res = await handler(baseEvent({
+      data: {
+        ...validData,
+        proteins: [
+          {
+            uniprot_id: 'P12345', alias: 'TestProtein', family: 'TetR',
+            references: [{ title: 'A paper', doi: '10.1/x', interaction: ['Stimulus'] }],
+          },
+          { uniprot_id: 'P67890', alias: 'AnotherProtein', family: 'TetR' },
+        ],
+      },
+    }));
+    expect(res.statusCode).toBe(202);
+    const putInput = docClientMock.commandCalls(PutCommand)[0].args[0].input;
+    const p1 = putInput.Item.data.proteins.find((p) => p.uniprot_id === 'P12345');
+    // Prod's rich interaction objects are preserved, not the flattened strings.
+    expect(p1.references).toEqual(prodReferences);
+  });
+
+  test('References with rich (object) interaction are accepted and preserved byte-for-byte', async () => {
+    // The edit form now loads/submits interaction untouched as the legacy rich
+    // objects (no longer flattened to strings). The schema must accept them and
+    // the prod array must round-trip unchanged so a no-op edit diffs cleanly.
+    const prodReferences = [{
+      title: 'A paper',
+      doi: '10.1/x',
+      interaction: [{ figure: 'Figure 1', interaction_type: 'Stimulus', method: 'S1 nuclease mapping' }],
+    }];
+    docClientMock.on(GetCommand).resolves({
+      Item: {
+        ...prodRowWithSameProteins,
+        data: {
+          ...prodRowWithSameProteins.data,
+          proteins: [
+            { uniprot_id: 'P12345', alias: 'ProdVersion1', family: 'TetR', references: prodReferences },
+            { uniprot_id: 'P67890', alias: 'ProdVersion2', family: 'TetR' },
+          ],
+        },
+      },
+    });
+    docClientMock.on(PutCommand).resolves({});
+    const res = await handler(baseEvent({
+      data: {
+        ...validData,
+        proteins: [
+          {
+            uniprot_id: 'P12345', alias: 'TestProtein', family: 'TetR',
+            // Submitted with interaction as the untouched rich objects.
+            references: [{
+              title: 'A paper', doi: '10.1/x',
+              interaction: [{ figure: 'Figure 1', interaction_type: 'Stimulus', method: 'S1 nuclease mapping' }],
+            }],
+          },
+          { uniprot_id: 'P67890', alias: 'AnotherProtein', family: 'TetR' },
+        ],
+      },
+    }));
+    expect(res.statusCode).toBe(202);
+    const putInput = docClientMock.commandCalls(PutCommand)[0].args[0].input;
+    const p1 = putInput.Item.data.proteins.find((p) => p.uniprot_id === 'P12345');
+    expect(p1.references).toEqual(prodReferences);
+  });
+
   test('Happy path: valid edit submission returns 202', async () => {
     docClientMock.on(GetCommand).resolves({ Item: prodRowWithSameProteins });
     docClientMock.on(PutCommand).resolves({});

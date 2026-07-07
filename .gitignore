@@ -15,3 +15,5 @@ TODO.json
 api_v2_docs
 scripts/s3_v2
 .restore-tmp/
+
+scripts/v2

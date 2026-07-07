@@ -115,7 +115,13 @@ const proteinSchema = Joi.object({
     journal: Joi.string().allow('', null).optional(),
     doi: Joi.string().allow('', null).optional(),
     url: Joi.string().allow('', null).optional(),
-    interaction: Joi.array().items(Joi.string()).optional(),
+    // Deprecated dead data. The edit form no longer flattens it, so it arrives as
+    // the legacy rich objects ({ figure, interaction_type, method }); older clients
+    // may still send bare strings. Accept either — the value is forced back to the
+    // prod array below regardless, so this only needs to not reject a valid edit.
+    interaction: Joi.array()
+      .items(Joi.alternatives().try(Joi.string(), Joi.object().unknown(true)))
+      .optional(),
   }).unknown(true)).optional(),
   origin: Joi.array().items(Joi.object({
     type: Joi.string().allow('', null).optional(),
@@ -237,6 +243,12 @@ export const handler = async (event) => {
     for (const field of READ_ONLY_PROTEIN_FIELDS) {
       if (field in prodProtein) editProtein[field] = prodProtein[field];
     }
+    // References aren't editable through this form. Force them back to the prod
+    // value so an edit can't rewrite them — this keeps the deprecated, dead
+    // `interaction[]` data byte-for-byte and makes a no-op edit diff cleanly
+    // (About only). Current clients no longer flatten interaction to strings, so
+    // this is defense-in-depth against older clients that still might.
+    if ('references' in prodProtein) editProtein.references = prodProtein.references;
   }
 
   // Deterministic SK caps pending edits at one per sensor — re-submitting overwrites the queued copy.

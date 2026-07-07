@@ -285,7 +285,7 @@ const buildSmallMoleculeStimuli = (ligands) =>
   (ligands ?? [])
     .filter(l => l?.fullDOI)
     .map(l => ({
-      stimulusType: [{
+      stimulus_type: [{
         small_molecule: [{
           name: l.name,
           smiles: l.SMILES,
@@ -304,7 +304,7 @@ const buildSmallMoleculeStimuli = (ligands) =>
 
 const buildLightStimuli = (lights) =>
   (lights ?? []).map(l => ({
-    stimulusType: [{
+    stimulus_type: [{
       small_molecule: null,
       light: [{
         wavelength: Number(l.wavelength),
@@ -322,7 +322,7 @@ const buildLightStimuli = (lights) =>
 
 const buildTemperatureStimuli = (temps) =>
   (temps ?? []).map(t => ({
-    stimulusType: [{
+    stimulus_type: [{
       small_molecule: null,
       light: null,
       temperature: [{
@@ -368,7 +368,10 @@ const buildStructures = (structureData) =>
 const buildReferences = (...enrichedGroups) => {
   // enrichedGroups is array of [{items, type}, ...]
   const refMap = new Map();
-  const addEntry = (fullDOI, interactionType) => {
+  // `interaction` is deprecated dead data — no longer surfaced in the UI and slated
+  // for removal. We keep the (empty) key for shape compatibility but stop populating
+  // it, so new sensors don't accrue more of it. Existing values are left untouched.
+  const addEntry = (fullDOI) => {
     if (!fullDOI?.doi) return;
     if (!refMap.has(fullDOI.doi)) {
       refMap.set(fullDOI.doi, {
@@ -381,12 +384,10 @@ const buildReferences = (...enrichedGroups) => {
         interaction: [],
       });
     }
-    const ref = refMap.get(fullDOI.doi);
-    if (!ref.interaction.includes(interactionType)) ref.interaction.push(interactionType);
   };
-  for (const { items, type } of enrichedGroups) {
+  for (const { items } of enrichedGroups) {
     for (const it of (items ?? [])) {
-      if (it?.fullDOI) addEntry(it.fullDOI, type);
+      if (it?.fullDOI) addEntry(it.fullDOI);
     }
   }
   return Array.from(refMap.values());
