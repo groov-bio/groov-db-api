@@ -103,7 +103,9 @@ const proteinSchema = Joi.object({
       last_name: Joi.string().allow('', null).optional(),
       first_name: Joi.string().allow('', null).optional(),
     }).unknown(true)).optional(),
-    year: Joi.number().allow(null).optional(),
+    // Year is stored as a string everywhere (migrated data + addNewSensorV2 +
+    // doiLookup all emit strings); the editor submits strings too.
+    year: Joi.string().allow('', null).optional(),
     journal: Joi.string().allow('', null).optional(),
     doi: Joi.string().allow('', null).optional(),
     url: Joi.string().allow('', null).optional(),
@@ -209,6 +211,26 @@ export const handler = async (event) => {
     prodUniprotIds.some((id, i) => id !== editUniprotIds[i])
   ) {
     return errBody(400, 'Protein uniprot_ids cannot be changed in an edit', corsHeaders);
+  }
+
+  // Read-only fields cannot be changed in an edit — enforced server-side to mirror
+  // the locked fields in the edit form. Only About (sensor) and Alias / Regulation
+  // type (protein) are editable identity fields.
+  if ((data.type ?? null) !== (prodRow.data?.type ?? null)) {
+    return errBody(400, 'Sensor type is read-only and cannot be changed', corsHeaders);
+  }
+  const prodProteinsByUniprot = new Map(
+    (prodRow.data?.proteins ?? []).map((p) => [p.uniprot_id, p])
+  );
+  const READ_ONLY_PROTEIN_FIELDS = ['family', 'kegg_id', 'refseq_id', 'sequence'];
+  for (const editProtein of (data.proteins ?? [])) {
+    const prodProtein = prodProteinsByUniprot.get(editProtein.uniprot_id);
+    if (!prodProtein) continue; // uniprot set already validated to match above
+    for (const field of READ_ONLY_PROTEIN_FIELDS) {
+      if ((editProtein[field] ?? null) !== (prodProtein[field] ?? null)) {
+        return errBody(400, `Protein "${field}" is read-only and cannot be changed`, corsHeaders);
+      }
+    }
   }
 
   // Deterministic SK caps pending edits at one per sensor — re-submitting overwrites the queued copy.
