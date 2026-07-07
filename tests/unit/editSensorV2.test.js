@@ -49,15 +49,18 @@ const baseEvent = (overrides = {}) => ({
   ...overrides,
 });
 
+// Prod row matches validData on all read-only fields (type + protein family);
+// only the editable `alias` differs, which a valid edit is allowed to change.
 const prodRowWithSameProteins = {
   PK: { category: 'TetR', grv_id: 'GRV-123' },
   SK: 'GRV-123',
   data: {
     id: 'GRV-123',
     category: 'TetR',
+    type: 'One Component',
     proteins: [
-      { uniprot_id: 'P12345', alias: 'ProdVersion1' },
-      { uniprot_id: 'P67890', alias: 'ProdVersion2' },
+      { uniprot_id: 'P12345', alias: 'ProdVersion1', family: 'TetR' },
+      { uniprot_id: 'P67890', alias: 'ProdVersion2', family: 'TetR' },
     ],
   },
 };
@@ -170,6 +173,45 @@ describe('EditSensorV2', () => {
     expect(res.statusCode).toBe(400);
     const body = JSON.parse(res.body);
     expect(body.message).toMatch(/Protein uniprot_ids cannot be changed/);
+  });
+
+  test('Changing sensor type returns 400 (read-only)', async () => {
+    docClientMock.on(GetCommand).resolves({ Item: prodRowWithSameProteins });
+    const res = await handler(baseEvent({
+      data: { ...validData, type: 'Two Component' },
+    }));
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).message).toMatch(/Sensor type is read-only/);
+  });
+
+  test('Changing a read-only protein field (family) returns 400', async () => {
+    docClientMock.on(GetCommand).resolves({ Item: prodRowWithSameProteins });
+    const res = await handler(baseEvent({
+      data: {
+        ...validData,
+        proteins: [
+          { uniprot_id: 'P12345', alias: 'TestProtein', family: 'MarR' }, // family changed
+          { uniprot_id: 'P67890', alias: 'AnotherProtein', family: 'TetR' },
+        ],
+      },
+    }));
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).message).toMatch(/Protein "family" is read-only/);
+  });
+
+  test('Editing only allowed fields (alias, regulation_type) returns 202', async () => {
+    docClientMock.on(GetCommand).resolves({ Item: prodRowWithSameProteins });
+    docClientMock.on(PutCommand).resolves({});
+    const res = await handler(baseEvent({
+      data: {
+        ...validData,
+        proteins: [
+          { uniprot_id: 'P12345', alias: 'RenamedProtein', family: 'TetR', regulation_type: 'Activator' },
+          { uniprot_id: 'P67890', alias: 'AlsoRenamed', family: 'TetR' },
+        ],
+      },
+    }));
+    expect(res.statusCode).toBe(202);
   });
 
   test('Happy path: valid edit submission returns 202', async () => {
