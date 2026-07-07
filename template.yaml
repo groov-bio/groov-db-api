@@ -274,6 +274,38 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref GroovTempTableV2Processed
 
+  DoiLookupV2Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/doiLookupV2
+      Handler: doiLookup.handler
+      Runtime: nodejs20.x
+      MemorySize: 256
+      Timeout: 15
+      FunctionName: !Sub ${Env}-doi-lookup-v2-function
+      Environment:
+        Variables:
+          ENV: !Ref Env
+      Architectures:
+        - arm64
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/doiLookup
+            Method: get
+            Auth:
+              Authorizer: CognitoJwtAuthorizer
+        OptionsApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/doiLookup
+            Method: options
+      Layers:
+        - !Ref NodeLayer
+
   GetTempSensorFunction:
     Type: AWS::Serverless::Function
     Properties:
