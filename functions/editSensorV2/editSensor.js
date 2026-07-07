@@ -254,6 +254,11 @@ export const handler = async (event) => {
         user: user ?? null,
         editTimestamp: timeSubmit ?? Date.now(),
         data,
+        // Snapshot the live prod row as the diff baseline so the admin review can
+        // show FROM (previousData) → TO (data). Captured here because read-only
+        // fields on `data` have already been forced to the prod values above, so
+        // the two blobs share an identical shape and only user-changed fields differ.
+        previousData: prodRow.data ?? null,
       },
     }));
   } catch (err) {

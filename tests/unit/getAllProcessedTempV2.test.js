@@ -64,6 +64,7 @@ describe('GetAllProcessedTempV2', () => {
       isEdit: false,
       editTarget: null,
       data: { id: null, type: 'One Component', proteins: [] },
+      previousData: null,
     });
     expect(body.processed[1].proposed_grv_id).toBe('GRV-XYZ');
 
@@ -109,7 +110,8 @@ describe('GetAllProcessedTempV2', () => {
           SK: 'EDIT#GRV-123',
           isEdit: true,
           editTarget: { category: 'category-x', grv_id: 'GRV-123' },
-          data: { id: 'GRV-123', category: 'category-x', proteins: [] },
+          data: { id: 'GRV-123', category: 'category-x', about: 'new', proteins: [] },
+          previousData: { id: 'GRV-123', category: 'category-x', about: 'old', proteins: [] },
         },
       ],
     });
@@ -124,7 +126,8 @@ describe('GetAllProcessedTempV2', () => {
       isEdit: true,
       editTarget: { category: 'category-x', grv_id: 'GRV-123' },
       proposed_grv_id: null,
-      data: { id: 'GRV-123', category: 'category-x', proteins: [] },
+      data: { id: 'GRV-123', category: 'category-x', about: 'new', proteins: [] },
+      previousData: { id: 'GRV-123', category: 'category-x', about: 'old', proteins: [] },
     });
   });
 
@@ -146,6 +149,7 @@ describe('GetAllProcessedTempV2', () => {
       isEdit: false,
       editTarget: null,
       data: null,
+      previousData: null,
     });
   });
 });

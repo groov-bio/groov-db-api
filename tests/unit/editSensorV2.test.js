@@ -277,6 +277,8 @@ describe('EditSensorV2', () => {
     expect(putInput.Item.user).toBe('testuser');
     expect(putInput.Item.editTimestamp).toBe(1640995200000);
     expect(putInput.Item.data).toEqual(validData);
+    // Pre-edit baseline snapshot for the admin diff view.
+    expect(putInput.Item.previousData).toEqual(prodRowWithSameProteins.data);
   });
 
   test('Happy path: preserves data fields exactly (stimulus_type, stimulusType)', async () => {

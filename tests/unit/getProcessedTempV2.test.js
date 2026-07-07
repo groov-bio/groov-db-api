@@ -67,6 +67,7 @@ describe('GetProcessedTempV2', () => {
       isEdit: false,
       editTarget: null,
       data: { id: null, proteins: [{ uniprot_id: 'P12345' }] },
+      previousData: null,
     });
 
     const call = docClientMock.calls()[0];
@@ -74,14 +75,15 @@ describe('GetProcessedTempV2', () => {
     expect(call.args[0].input.Key).toEqual({ PK: 'PROCESSED', SK: 'uuid-1' });
   });
 
-  test('returns edit row with isEdit true and editTarget set', async () => {
+  test('returns edit row with isEdit true, editTarget, and previousData baseline', async () => {
     docClientMock.on(GetCommand).resolves({
       Item: {
         PK: 'PROCESSED',
         SK: 'EDIT#GRV-123',
         isEdit: true,
         editTarget: { category: 'category-x', grv_id: 'GRV-123' },
-        data: { id: 'GRV-123', category: 'category-x', proteins: [{ uniprot_id: 'P12345' }] },
+        data: { id: 'GRV-123', category: 'category-x', about: 'new', proteins: [{ uniprot_id: 'P12345' }] },
+        previousData: { id: 'GRV-123', category: 'category-x', about: 'old', proteins: [{ uniprot_id: 'P12345' }] },
       },
     });
 
@@ -94,7 +96,8 @@ describe('GetProcessedTempV2', () => {
       isEdit: true,
       editTarget: { category: 'category-x', grv_id: 'GRV-123' },
       proposed_grv_id: null,
-      data: { id: 'GRV-123', category: 'category-x', proteins: [{ uniprot_id: 'P12345' }] },
+      data: { id: 'GRV-123', category: 'category-x', about: 'new', proteins: [{ uniprot_id: 'P12345' }] },
+      previousData: { id: 'GRV-123', category: 'category-x', about: 'old', proteins: [{ uniprot_id: 'P12345' }] },
     });
   });
 

@@ -63,6 +63,8 @@ export const handler = async (event) => {
         isEdit: result.Item.isEdit ?? false,
         editTarget: result.Item.editTarget ?? null,
         data: result.Item.data ?? null,
+        // Pre-edit baseline for the admin diff view (edit rows only; null otherwise).
+        previousData: result.Item.previousData ?? null,
       }),
     };
   } catch (err) {
