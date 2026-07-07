@@ -74,6 +74,12 @@ const proteinSchema = Joi.object({
   kegg_id: Joi.string().allow('', null).optional(),
   regulation_type: Joi.string().allow('', null).optional(),
   sequence: Joi.string().allow('', null).optional(),
+  // Top-level mutations — same shape as addNewSensorV2 so both forms agree.
+  mutations: Joi.array().items(Joi.object({
+    mutations: Joi.array().items(Joi.string().max(32)).min(1).required(),
+    ref_type: Joi.string().valid("UniProt", "groovDB").required(),
+    ref_id: Joi.string().max(64).required(),
+  })).optional(),
   stimulus: Joi.array().items(stimulusSchema).optional(),
   dna: Joi.array().items(Joi.object({
     sequence: Joi.string().optional(),
