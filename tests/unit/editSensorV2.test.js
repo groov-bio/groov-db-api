@@ -253,11 +253,13 @@ describe('EditSensorV2', () => {
     expect(p1.sequence).toBe('PRODSEQ'); // forced to prod value, no false rejection
   });
 
-  test('References are forced back to prod: edit-form flattened interaction does not land in prod', async () => {
+  test('References are editable: a corrected DOI/author is saved and interaction is preserved', async () => {
     const prodReferences = [{
       title: 'A paper',
-      doi: '10.1/x',
-      // Legacy dead data: interaction is an array of rich objects in prod.
+      doi: '10.1/OLD',
+      authors: [{ last_name: 'Smith', first_name: 'A' }],
+      // Legacy dead data: interaction is an array of rich objects in prod. The
+      // edit form leaves it untouched, so a genuine edit must carry it through.
       interaction: [{ figure: 'Figure 1', interaction_type: 'Stimulus', method: 'EMSA' }],
     }];
     docClientMock.on(GetCommand).resolves({
@@ -273,14 +275,20 @@ describe('EditSensorV2', () => {
       },
     });
     docClientMock.on(PutCommand).resolves({});
-    // The edit form submits references with interaction flattened to bare strings.
+    // The edit corrects the DOI and adds a co-author, leaving interaction as-is.
+    const editedReferences = [{
+      title: 'A paper',
+      doi: '10.1/CORRECTED',
+      authors: [{ last_name: 'Smith', first_name: 'A' }, { last_name: 'Jones', first_name: 'B' }],
+      interaction: [{ figure: 'Figure 1', interaction_type: 'Stimulus', method: 'EMSA' }],
+    }];
     const res = await handler(baseEvent({
       data: {
         ...validData,
         proteins: [
           {
             uniprot_id: 'P12345', alias: 'TestProtein', family: 'TetR',
-            references: [{ title: 'A paper', doi: '10.1/x', interaction: ['Stimulus'] }],
+            references: editedReferences,
           },
           { uniprot_id: 'P67890', alias: 'AnotherProtein', family: 'TetR' },
         ],
@@ -289,8 +297,9 @@ describe('EditSensorV2', () => {
     expect(res.statusCode).toBe(202);
     const putInput = docClientMock.commandCalls(PutCommand)[0].args[0].input;
     const p1 = putInput.Item.data.proteins.find((p) => p.uniprot_id === 'P12345');
-    // Prod's rich interaction objects are preserved, not the flattened strings.
-    expect(p1.references).toEqual(prodReferences);
+    // The corrected references are saved (not forced back to prod), and the
+    // deprecated interaction array rides along unchanged.
+    expect(p1.references).toEqual(editedReferences);
   });
 
   test('References with rich (object) interaction are accepted and preserved byte-for-byte', async () => {
@@ -335,6 +344,69 @@ describe('EditSensorV2', () => {
     const putInput = docClientMock.commandCalls(PutCommand)[0].args[0].input;
     const p1 = putInput.Item.data.proteins.find((p) => p.uniprot_id === 'P12345');
     expect(p1.references).toEqual(prodReferences);
+  });
+
+  test('Origin and mutations are forced back to prod: an edit cannot change them', async () => {
+    const prodOrigin = [{ type: 'wild-type', organism_name: 'E. coli', organism_id: 562 }];
+    const prodMutations = [{ mutations: ['A1B'], ref_type: 'UniProt', ref_id: 'P12345' }];
+    docClientMock.on(GetCommand).resolves({
+      Item: {
+        ...prodRowWithSameProteins,
+        data: {
+          ...prodRowWithSameProteins.data,
+          proteins: [
+            {
+              uniprot_id: 'P12345', alias: 'ProdVersion1', family: 'TetR',
+              origin: prodOrigin, mutations: prodMutations,
+            },
+            { uniprot_id: 'P67890', alias: 'ProdVersion2', family: 'TetR' },
+          ],
+        },
+      },
+    });
+    docClientMock.on(PutCommand).resolves({});
+    const res = await handler(baseEvent({
+      data: {
+        ...validData,
+        proteins: [
+          {
+            uniprot_id: 'P12345', alias: 'TestProtein', family: 'TetR',
+            // Attempt to change origin and mutations — both must be reverted.
+            origin: [{ type: 'engineered', organism_name: 'Synthetic', organism_id: 999 }],
+            mutations: [{ mutations: ['Z9Y'], ref_type: 'UniProt', ref_id: 'P12345' }],
+          },
+          { uniprot_id: 'P67890', alias: 'AnotherProtein', family: 'TetR' },
+        ],
+      },
+    }));
+    expect(res.statusCode).toBe(202);
+    const putInput = docClientMock.commandCalls(PutCommand)[0].args[0].input;
+    const p1 = putInput.Item.data.proteins.find((p) => p.uniprot_id === 'P12345');
+    expect(p1.origin).toEqual(prodOrigin);
+    expect(p1.mutations).toEqual(prodMutations);
+  });
+
+  test('Origin and mutations absent in prod are stripped: an edit cannot introduce them', async () => {
+    docClientMock.on(GetCommand).resolves({ Item: prodRowWithSameProteins });
+    docClientMock.on(PutCommand).resolves({});
+    const res = await handler(baseEvent({
+      data: {
+        ...validData,
+        proteins: [
+          {
+            uniprot_id: 'P12345', alias: 'TestProtein', family: 'TetR',
+            origin: [{ type: 'wild-type', organism_name: 'E. coli' }],
+            mutations: [{ mutations: ['A1B'], ref_type: 'UniProt', ref_id: 'P12345' }],
+          },
+          { uniprot_id: 'P67890', alias: 'AnotherProtein', family: 'TetR' },
+        ],
+      },
+    }));
+    expect(res.statusCode).toBe(202);
+    const putInput = docClientMock.commandCalls(PutCommand)[0].args[0].input;
+    const p1 = putInput.Item.data.proteins.find((p) => p.uniprot_id === 'P12345');
+    expect(p1).not.toHaveProperty('origin');
+    expect(p1).not.toHaveProperty('mutations');
   });
 
   test('Happy path: valid edit submission returns 202', async () => {

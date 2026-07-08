@@ -231,7 +231,8 @@ export const handler = async (event) => {
   // sensor from the R2 static JSON, which can drift from the prod table for a
   // field the user never touched — rejecting would falsely block a valid edit,
   // whereas overwriting still guarantees these fields can't be changed.
-  // Only About (sensor) and Alias / Regulation type (protein) stay editable.
+  // Editable through the form: About, Alias, Regulation type, Stimulus, DNA
+  // binding, and References. Identity fields below are forced back to prod.
   if ('type' in (prodRow.data ?? {})) data.type = prodRow.data.type;
   const prodProteinsByUniprot = new Map(
     (prodRow.data?.proteins ?? []).map((p) => [p.uniprot_id, p])
@@ -243,12 +244,19 @@ export const handler = async (event) => {
     for (const field of READ_ONLY_PROTEIN_FIELDS) {
       if (field in prodProtein) editProtein[field] = prodProtein[field];
     }
-    // References aren't editable through this form. Force them back to the prod
-    // value so an edit can't rewrite them — this keeps the deprecated, dead
-    // `interaction[]` data byte-for-byte and makes a no-op edit diff cleanly
-    // (About only). Current clients no longer flatten interaction to strings, so
-    // this is defense-in-depth against older clients that still might.
-    if ('references' in prodProtein) editProtein.references = prodProtein.references;
+    // References are editable (e.g. correcting a wrong DOI, title, or author).
+    // The edit form leaves the deprecated `interaction[]` array untouched, so it
+    // still round-trips byte-for-byte and a no-op edit diffs cleanly; only the
+    // fields the user actually changed appear in the diff.
+
+    // Origin and mutations are tied to the sensor's identity — changing them
+    // means creating a new sensor, not editing this one — so the edit form no
+    // longer exposes them. Force each back to the prod value (deleting it when
+    // prod has none) so an edit can neither modify nor introduce them.
+    for (const field of ['origin', 'mutations']) {
+      if (field in prodProtein) editProtein[field] = prodProtein[field];
+      else delete editProtein[field];
+    }
   }
 
   // Deterministic SK caps pending edits at one per sensor — re-submitting overwrites the queued copy.
