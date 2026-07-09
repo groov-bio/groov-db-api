@@ -10,7 +10,6 @@
 import json
 import logging
 import os
-import re
 import sys
 from decimal import Decimal
 
@@ -28,6 +27,7 @@ if _UTILS_DIR not in sys.path:
     sys.path.insert(0, _UTILS_DIR)
 
 import operon  # noqa: E402
+from groov_models import ADD_NEW_SENSOR_PAYLOAD, validate  # noqa: E402  (shared python-v2 layer)
 
 ALLOWED_ORIGINS = ["http://localhost:3000", "https://groov.bio", "https://www.groov.bio"]
 
@@ -78,263 +78,13 @@ def fetch_with_timeout(method, url, timeout_ms=30000, **kwargs):
         raise
 
 
-# ---- Validation (hand-rolled port of the Joi schemas) -----------------------
-#
-# mainSchema in the JS source is built with `.options({ abortEarly: false,
-# allowUnknown: true })`. In Joi, preferences set on the root schema this way
-# cascade to every nested schema unless a child explicitly overrides them —
-# and none of the nested schemas here call `.unknown()` — so unknown/extra
-# keys are permitted at every level of the payload. That means our validator
-# below never needs to reject on unrecognized keys; it only needs to enforce
-# required-ness / type / pattern / valid-list rules for the fields Joi does
-# constrain, and collect every failure (abortEarly: false) rather than
-# stopping at the first one.
-#
-# The handler tests only assert statusCode and that body.type ==
-# 'Validation Error' with body.errors being a list — they do not assert on
-# message text — so exact Joi error message wording is not reproduced; only
-# PASS/FAIL parity matters.
-
-REF_FIGURE_RE = re.compile(r"^(Figure|Supplementary Figure|Table|Supplementary Table) [S]?[1-9]?[0-9A-Za-z]?$")
-ALIAS_RE = re.compile(r"^[A-Za-z0-9_.]+$")
-UNIPROT_ID_RE = re.compile(r"^[A-Za-z0-9_]+$")
-ACCESSION_RE = re.compile(r"^[A-Za-z0-9_.]+$")
-SEQUENCE_RE = re.compile(r"^[ATCGatcg]+$")
-
-LIGAND_METHODS = {
-    "EMSA", "DNase footprinting", "Isothermal titration calorimetry",
-    "Synthetic regulation", "Fluorescence polarization", "Surface plasmon resonance",
-    "Thermal shift", "Spectrophotometric competition", "Spectral shift",
-    "DNA affinity chromatography", "Autophosphorylation assay",
-}
-OPERATOR_METHODS = {
-    "EMSA", "DNase footprinting", "Crystal structure", "Isothermal titration calorimetry",
-    "Fluorescence polarization", "Surface plasmon resonance", "Synthetic regulation", "ChIP-Seq",
-}
-REGULATORY_EFFECTS = {"activates", "represses"}
-PROTEIN_FAMILIES = {"TetR", "LysR", "AraC", "MarR", "LacI", "GntR", "LuxR", "IclR", "Other", "OmpR", "HisKA"}
-MECHANISMS = {"Apo-repressor", "Apo-activator", "Co-repressor", "Co-activator", "Signal transduction"}
-MUTATION_REF_TYPES = {"UniProt", "groovDB"}
-# OmpR/HisKA proteins only exist as part of a two-component system, so a
-# single-protein submission can't use them.
-TWO_COMPONENT_ONLY_FAMILIES = {"OmpR", "HisKA"}
-
-
-def _is_str(v):
-    return isinstance(v, str)
-
-
-def _is_num(v):
-    return isinstance(v, (int, float)) and not isinstance(v, bool)
-
-
-def _validate_ligand(o, errors):
-    if not isinstance(o, dict):
-        errors.append("protein.ligands[]: must be an object")
-        return
-    if not (_is_str(o.get("doi")) and o.get("doi") != ""):
-        errors.append("protein.ligands[].doi is required")
-    if not (_is_str(o.get("method")) and o.get("method") in LIGAND_METHODS):
-        errors.append("protein.ligands[].method is invalid")
-    rf = o.get("ref_figure")
-    if not (_is_str(rf) and REF_FIGURE_RE.match(rf)):
-        errors.append("protein.ligands[].ref_figure is invalid")
-    name = o.get("name")
-    if not (_is_str(name) and name != "" and len(name) <= 64):
-        errors.append("protein.ligands[].name is invalid")
-    smiles = o.get("SMILES")
-    if not (_is_str(smiles) and smiles != ""):
-        errors.append("protein.ligands[].SMILES is required")
-    if "regulatory_effect" in o and o["regulatory_effect"] not in ({None, "", *REGULATORY_EFFECTS}):
-        errors.append("protein.ligands[].regulatory_effect is invalid")
-    if "kd" in o and o["kd"] is not None and not _is_num(o["kd"]):
-        errors.append("protein.ligands[].kd must be a number or null")
-
-
-def _validate_operator(o, errors):
-    if not isinstance(o, dict):
-        errors.append("protein.operators[]: must be an object")
-        return
-    if not (_is_str(o.get("doi")) and o.get("doi") != ""):
-        errors.append("protein.operators[].doi is required")
-    if not (_is_str(o.get("method")) and o.get("method") in OPERATOR_METHODS):
-        errors.append("protein.operators[].method is invalid")
-    rf = o.get("ref_figure")
-    if not (_is_str(rf) and REF_FIGURE_RE.match(rf)):
-        errors.append("protein.operators[].ref_figure is invalid")
-    seq = o.get("sequence")
-    if not (_is_str(seq) and seq != "" and len(seq) <= 512 and SEQUENCE_RE.match(seq)):
-        errors.append("protein.operators[].sequence is invalid")
-    if "kd" in o and o["kd"] is not None and not _is_num(o["kd"]):
-        errors.append("protein.operators[].kd must be a number or null")
-
-
-def _validate_light_stimulus(o, errors):
-    if not isinstance(o, dict):
-        errors.append("protein.light_stimuli[]: must be an object")
-        return
-    if not _is_num(o.get("wavelength")):
-        errors.append("protein.light_stimuli[].wavelength is required")
-    if "regulatory_effect" in o and o["regulatory_effect"] not in ({None, "", *REGULATORY_EFFECTS}):
-        errors.append("protein.light_stimuli[].regulatory_effect is invalid")
-    if not (_is_str(o.get("doi")) and o.get("doi") != ""):
-        errors.append("protein.light_stimuli[].doi is required")
-    if not (_is_str(o.get("method")) and o.get("method") != ""):
-        errors.append("protein.light_stimuli[].method is required")
-    rf = o.get("ref_figure")
-    if not (_is_str(rf) and REF_FIGURE_RE.match(rf)):
-        errors.append("protein.light_stimuli[].ref_figure is invalid")
-
-
-def _validate_temperature_stimulus(o, errors):
-    if not isinstance(o, dict):
-        errors.append("protein.temperature_stimuli[]: must be an object")
-        return
-    if not _is_num(o.get("temperature")):
-        errors.append("protein.temperature_stimuli[].temperature is required")
-    if "regulatory_effect" in o and o["regulatory_effect"] not in ({None, "", *REGULATORY_EFFECTS}):
-        errors.append("protein.temperature_stimuli[].regulatory_effect is invalid")
-    if not (_is_str(o.get("doi")) and o.get("doi") != ""):
-        errors.append("protein.temperature_stimuli[].doi is required")
-    if not (_is_str(o.get("method")) and o.get("method") != ""):
-        errors.append("protein.temperature_stimuli[].method is required")
-    rf = o.get("ref_figure")
-    if not (_is_str(rf) and REF_FIGURE_RE.match(rf)):
-        errors.append("protein.temperature_stimuli[].ref_figure is invalid")
-
-
-def _validate_mutation_entry(o, errors):
-    if not isinstance(o, dict):
-        errors.append("protein.mutations[]: must be an object")
-        return
-    muts = o.get("mutations")
-    if not (isinstance(muts, list) and len(muts) >= 1 and all(_is_str(m) and len(m) <= 32 for m in muts)):
-        errors.append("protein.mutations[].mutations is invalid")
-    if o.get("ref_type") not in MUTATION_REF_TYPES:
-        errors.append("protein.mutations[].ref_type is invalid")
-    ref_id = o.get("ref_id")
-    if not (_is_str(ref_id) and ref_id != "" and len(ref_id) <= 64):
-        errors.append("protein.mutations[].ref_id is invalid")
-
-
-def _validate_protein(o, errors):
-    if not isinstance(o, dict):
-        errors.append("sensor.proteins[]: must be an object")
-        return
-
-    alias = o.get("alias")
-    if not (_is_str(alias) and alias != "" and len(alias) <= 16 and ALIAS_RE.match(alias)):
-        errors.append("protein.alias is invalid")
-
-    uni = o.get("uniProtID")
-    if not (_is_str(uni) and uni != "" and UNIPROT_ID_RE.match(uni)):
-        errors.append("protein.uniProtID is required")
-
-    if "accession" in o:
-        acc = o["accession"]
-        if acc is None:
-            errors.append("protein.accession cannot be null")
-        elif acc == "":
-            pass  # explicitly allowed blank
-        elif not (_is_str(acc) and ACCESSION_RE.match(acc)):
-            errors.append("protein.accession is invalid")
-
-    if o.get("family") not in PROTEIN_FAMILIES:
-        errors.append("protein.family is invalid")
-
-    if o.get("ligands") is not None:
-        ligands = o["ligands"]
-        if not isinstance(ligands, list):
-            errors.append("protein.ligands must be an array")
-        else:
-            for l in ligands:
-                _validate_ligand(l, errors)
-
-    if o.get("operators") is not None:
-        operators = o["operators"]
-        if not isinstance(operators, list):
-            errors.append("protein.operators must be an array")
-        else:
-            for op in operators:
-                _validate_operator(op, errors)
-
-    if o.get("light_stimuli") is not None:
-        lights = o["light_stimuli"]
-        if not isinstance(lights, list):
-            errors.append("protein.light_stimuli must be an array")
-        else:
-            for l in lights:
-                _validate_light_stimulus(l, errors)
-
-    if o.get("temperature_stimuli") is not None:
-        temps = o["temperature_stimuli"]
-        if not isinstance(temps, list):
-            errors.append("protein.temperature_stimuli must be an array")
-        else:
-            for t in temps:
-                _validate_temperature_stimulus(t, errors)
-
-    if o.get("mutations") is not None:
-        mutations = o["mutations"]
-        if not isinstance(mutations, list):
-            errors.append("protein.mutations must be an array")
-        else:
-            for m in mutations:
-                _validate_mutation_entry(m, errors)
-
-
-def _validate_sensor(o, errors):
-    if not isinstance(o, dict):
-        errors.append("sensor: must be an object")
-        return
-
-    if "mechanism" in o and o["mechanism"] not in ({None, "", *MECHANISMS}):
-        errors.append("sensor.mechanism is invalid")
-
-    if o.get("about") not in (None, ""):
-        about = o.get("about")
-        if not (_is_str(about) and len(about) <= 500):
-            errors.append("sensor.about is invalid")
-
-    proteins = o.get("proteins")
-    if not (isinstance(proteins, list) and len(proteins) >= 1):
-        errors.append("sensor.proteins is required and must have at least 1 item")
-        proteins = proteins if isinstance(proteins, list) else []
-
-    for p in proteins:
-        _validate_protein(p, errors)
-
-    # Two-component-only family check (Joi `.custom()` on sensorSchema).
-    uses_two_component_family = any(
-        isinstance(p, dict) and p.get("family") in TWO_COMPONENT_ONLY_FAMILIES for p in proteins
-    )
-    if uses_two_component_family and len(proteins) < 2:
-        errors.append("OmpR and HisKA families are only valid for two-component systems (2 or more proteins)")
-
-
 def validate_main_schema(data):
-    errors = []
-    if not isinstance(data, dict):
-        return ["Invalid payload: expected an object"]
-
-    sensor = data.get("sensor")
-    if sensor is None:
-        errors.append("sensor is required")
-    else:
-        _validate_sensor(sensor, errors)
-
-    if "user" in data and data["user"] is not None and not _is_str(data["user"]):
-        errors.append("user must be a string")
-    if "timeSubmit" in data and data["timeSubmit"] is not None and not _is_num(data["timeSubmit"]):
-        errors.append("timeSubmit must be a number")
-    if "submissionUUID" in data and data["submissionUUID"] is not None and not _is_str(data["submissionUUID"]):
-        errors.append("submissionUUID must be a string")
-    if "PK" in data and data["PK"] is not None and not _is_str(data["PK"]):
-        errors.append("PK must be a string")
-    if "SK" in data and data["SK"] is not None and not _is_str(data["SK"]):
-        errors.append("SK must be a string")
-
-    return errors
+    # The full Joi->Pydantic schema now lives in the shared python-v2 layer
+    # (groov_models.ADD_NEW_SENSOR_PAYLOAD). This endpoint's profile allows
+    # unknown keys, makes sensor.mechanism optional, accepts plain-string DOIs,
+    # and rejects an explicit-null protein.accession. Returns a list of error
+    # strings (empty == valid) — same contract the handler already expects.
+    return validate(ADD_NEW_SENSOR_PAYLOAD, data)
 
 
 def inferType(proteins, rna):

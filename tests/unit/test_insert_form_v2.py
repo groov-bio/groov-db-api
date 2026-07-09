@@ -8,6 +8,10 @@ from unittest import mock
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(THIS_DIR, "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "functions", "insertFormV2"))
+# Shared validation models ship in the python-v2 Lambda layer (deployed to
+# /opt/python); locally we put that layer's source dir on sys.path so the
+# handler's `from groov_models import ...` resolves.
+sys.path.insert(0, os.path.join(ROOT, "layers", "python-v2", "shared"))
 
 import insertForm as insert_form  # noqa: E402
 

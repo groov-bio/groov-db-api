@@ -22,6 +22,10 @@ FUNC_DIR = os.path.join(ROOT, "functions", "addNewSensorV2")
 UTILS_DIR = os.path.join(FUNC_DIR, "utils")
 sys.path.insert(0, FUNC_DIR)
 sys.path.insert(0, UTILS_DIR)
+# Shared validation models ship in the python-v2 Lambda layer (deployed to
+# /opt/python); locally we put that layer's source dir on sys.path so the
+# handler's `from groov_models import ...` resolves.
+sys.path.insert(0, os.path.join(ROOT, "layers", "python-v2", "shared"))
 
 import addNewSensor as h  # noqa: E402
 import operon  # noqa: E402

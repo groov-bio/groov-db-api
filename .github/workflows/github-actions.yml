@@ -33,7 +33,8 @@ jobs:
         python-version: '3.14'
 
     - name: Install Python test dependencies
-      run: pip install boto3 requests
+      # pydantic backs the shared validation models in layers/python-v2/shared.
+      run: pip install boto3 requests pydantic
 
     - name: Run Python V2 unit tests
       run: python -m unittest discover -s tests/unit -p "test_*.py"
@@ -78,8 +79,20 @@ jobs:
       run: |
         cd layers/python-v2
         rm -rf python
-        # Build under 3.14 to match the V2 functions' python3.14 runtime.
-        python3.14 -m pip install --target python -r requirements.txt
+        # pydantic ships a compiled core (pydantic-core); the V2 functions run
+        # on arm64, so cross-install the arm64/cp314 wheels here on the x86_64
+        # runner rather than the runner's native wheels (which would ImportError
+        # at runtime). --platform requires --only-binary=:all:.
+        python3.14 -m pip install --target python \
+          --platform manylinux2014_aarch64 \
+          --implementation cp \
+          --python-version 3.14 \
+          --only-binary=:all: \
+          -r requirements.txt
+        # Ship our shared, hand-authored modules into /opt/python alongside the
+        # pip deps. `python/` is gitignored build output (wiped above); the
+        # committed source of truth lives in shared/.
+        cp shared/*.py python/
 
     - name: Setup SAM
       uses: aws-actions/setup-sam@v2
