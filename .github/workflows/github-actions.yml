@@ -26,6 +26,19 @@ jobs:
     - name: Run tests with coverage
       run: npm run test:coverage
 
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        # Match the V2 Lambda runtime so tests validate the real target.
+        python-version: '3.14'
+
+    - name: Install Python test dependencies
+      # pydantic backs the shared validation models in layers/python-v2/shared.
+      run: pip install boto3 requests pydantic
+
+    - name: Run Python V2 unit tests
+      run: python -m unittest discover -s tests/unit -p "test_*.py"
+
   deploy:
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
@@ -45,17 +58,41 @@ jobs:
         npm install
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.12'
+        # Both interpreters are required: 3.12 builds the rdkit layer and the
+        # remaining python3.12 functions; 3.14 builds the V2 functions/layer.
+        # sam build resolves each function's Runtime to the matching binary.
+        python-version: |
+          3.12
+          3.14
 
     - name: Install Python dependencies for PythonLayer
       run: |
         cd layers/python
         # Remove any old build if needed
         rm -rf python
-        # Create the python folder and install dependencies *there*
-        pip install --target python -r requirements.txt
+        # rdkit is a compiled dep — build under 3.12 for the python3.12 runtime.
+        python3.12 -m pip install --target python -r requirements.txt
+
+    - name: Install Python dependencies for PythonV2Layer
+      run: |
+        cd layers/python-v2
+        rm -rf python
+        # pydantic ships a compiled core (pydantic-core); the V2 functions run
+        # on arm64, so cross-install the arm64/cp314 wheels here on the x86_64
+        # runner rather than the runner's native wheels (which would ImportError
+        # at runtime). --platform requires --only-binary=:all:.
+        python3.14 -m pip install --target python \
+          --platform manylinux2014_aarch64 \
+          --implementation cp \
+          --python-version 3.14 \
+          --only-binary=:all: \
+          -r requirements.txt
+        # Ship our shared, hand-authored modules into /opt/python alongside the
+        # pip deps. `python/` is gitignored build output (wiped above); the
+        # committed source of truth lives in shared/.
+        cp shared/*.py python/
 
     - name: Setup SAM
       uses: aws-actions/setup-sam@v2

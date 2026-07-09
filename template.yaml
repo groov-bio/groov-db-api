@@ -75,7 +75,19 @@ Resources:
       ContentUri: layers/python/
       CompatibleRuntimes:
         - python3.12
-  
+
+  # Shared dependencies for the Python 3.14 V2 functions. Only the V2 functions
+  # that make outbound HTTP calls (doiLookupV2, addNewSensorV2) need this; the
+  # rest rely solely on boto3, which is bundled in the Lambda Python runtime.
+  PythonV2Layer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: shared-python-v2-dependencies
+      Description: Shared Python 3.14 dependencies for V2 functions (requests)
+      ContentUri: layers/python-v2/
+      CompatibleRuntimes:
+        - python3.14
+
   DocsFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -198,8 +210,8 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/insertFormV2
-      Handler: insertForm.handler
-      Runtime: nodejs20.x
+      Handler: insertForm.lambda_handler
+      Runtime: python3.14
       MemorySize: 128
       Timeout: 10
       FunctionName: !Sub ${Env}-insert-form-v2-function
@@ -227,8 +239,6 @@ Resources:
             ApiId: !Ref GroovApi
             Path: /v2/insertForm
             Method: options
-      Layers:
-        - !Ref NodeLayer
       Policies:
         - DynamoDBReadPolicy:
             TableName: groov_db_table_v2
@@ -239,8 +249,8 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/editSensorV2
-      Handler: editSensor.handler
-      Runtime: nodejs20.x
+      Handler: editSensor.lambda_handler
+      Runtime: python3.14
       MemorySize: 128
       Timeout: 10
       FunctionName: !Sub ${Env}-edit-sensor-v2-function
@@ -266,8 +276,6 @@ Resources:
             ApiId: !Ref GroovApi
             Path: /v2/editSensor
             Method: options
-      Layers:
-        - !Ref NodeLayer
       Policies:
         - DynamoDBReadPolicy:
             TableName: groov_db_table_v2
@@ -278,8 +286,8 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/doiLookupV2
-      Handler: doiLookup.handler
-      Runtime: nodejs20.x
+      Handler: doiLookup.lambda_handler
+      Runtime: python3.14
       MemorySize: 256
       Timeout: 15
       FunctionName: !Sub ${Env}-doi-lookup-v2-function
@@ -304,7 +312,7 @@ Resources:
             Path: /v2/doiLookup
             Method: options
       Layers:
-        - !Ref NodeLayer
+        - !Ref PythonV2Layer
 
   GetTempSensorFunction:
     Type: AWS::Serverless::Function
@@ -439,8 +447,8 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/addNewSensorV2
-      Handler: addNewSensor.handler
-      Runtime: nodejs20.x
+      Handler: addNewSensor.lambda_handler
+      Runtime: python3.14
       MemorySize: 3008
       Timeout: 240
       FunctionName: !Sub ${Env}-add-new-sensor-v2-function
@@ -476,7 +484,7 @@ Resources:
             TableName: !Ref GroovTempTableV2Processed
 
       Layers:
-        - !Ref NodeLayer
+        - !Ref PythonV2Layer
 
   EditSensorFunction:
     Type: AWS::Serverless::Function
@@ -956,8 +964,8 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/getAllTempSensorsV2
-      Handler: getAllTempSensors.handler
-      Runtime: nodejs20.x
+      Handler: getAllTempSensors.lambda_handler
+      Runtime: python3.14
       MemorySize: 256
       Timeout: 10
       FunctionName: !Sub ${Env}-get-all-temp-sensors-v2-function
@@ -985,15 +993,13 @@ Resources:
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref GroovTempTableV2
-      Layers:
-        - !Ref NodeLayer
 
   GetTempSensorV2Function:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/getTempSensorV2
-      Handler: getTempSensor.handler
-      Runtime: nodejs20.x
+      Handler: getTempSensor.lambda_handler
+      Runtime: python3.14
       MemorySize: 128
       Timeout: 10
       FunctionName: !Sub ${Env}-get-temp-sensor-v2-function
@@ -1021,15 +1027,13 @@ Resources:
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref GroovTempTableV2
-      Layers:
-        - !Ref NodeLayer
 
   DeleteTempV2Function:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/deleteTempV2
-      Handler: deleteTemp.handler
-      Runtime: nodejs20.x
+      Handler: deleteTemp.lambda_handler
+      Runtime: python3.14
       MemorySize: 128
       Timeout: 10
       FunctionName: !Sub ${Env}-delete-temp-v2-function
@@ -1057,15 +1061,13 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref GroovTempTableV2
-      Layers:
-        - !Ref NodeLayer
 
   GetAllProcessedTempV2Function:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/getAllProcessedTempV2
-      Handler: getAllProcessedTemp.handler
-      Runtime: nodejs20.x
+      Handler: getAllProcessedTemp.lambda_handler
+      Runtime: python3.14
       MemorySize: 256
       Timeout: 10
       FunctionName: !Sub ${Env}-get-all-processed-temp-v2-function
@@ -1093,15 +1095,13 @@ Resources:
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref GroovTempTableV2Processed
-      Layers:
-        - !Ref NodeLayer
 
   GetProcessedTempV2Function:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/getProcessedTempV2
-      Handler: getProcessedTemp.handler
-      Runtime: nodejs20.x
+      Handler: getProcessedTemp.lambda_handler
+      Runtime: python3.14
       MemorySize: 128
       Timeout: 10
       FunctionName: !Sub ${Env}-get-processed-temp-v2-function
@@ -1129,15 +1129,13 @@ Resources:
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref GroovTempTableV2Processed
-      Layers:
-        - !Ref NodeLayer
 
   ApproveProcessedSensorV2Function:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/approveProcessedSensorV2
-      Handler: approveProcessedSensor.handler
-      Runtime: nodejs20.x
+      Handler: approveProcessedSensor.lambda_handler
+      Runtime: python3.14
       MemorySize: 256
       Timeout: 30
       FunctionName: !Sub ${Env}-approve-processed-sensor-v2-function
@@ -1179,15 +1177,13 @@ Resources:
               Action:
                 - lambda:InvokeFunction
               Resource: !GetAtt UpdateFingerprintV2Function.Arn
-      Layers:
-        - !Ref NodeLayer
 
   RejectProcessedSensorV2Function:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/rejectProcessedSensorV2
-      Handler: rejectProcessedSensor.handler
-      Runtime: nodejs20.x
+      Handler: rejectProcessedSensor.lambda_handler
+      Runtime: python3.14
       MemorySize: 128
       Timeout: 10
       FunctionName: !Sub ${Env}-reject-processed-sensor-v2-function
@@ -1215,15 +1211,13 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref GroovTempTableV2Processed
-      Layers:
-        - !Ref NodeLayer
 
   DeleteSensorV2Function:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: functions/deleteSensorV2
-      Handler: deleteSensor.handler
-      Runtime: nodejs20.x
+      Handler: deleteSensor.lambda_handler
+      Runtime: python3.14
       MemorySize: 256
       Timeout: 30
       FunctionName: !Sub ${Env}-delete-sensor-v2-function
@@ -1262,8 +1256,6 @@ Resources:
               Action:
                 - lambda:InvokeFunction
               Resource: !GetAtt UpdateFingerprintV2Function.Arn
-      Layers:
-        - !Ref NodeLayer
 
   UpdateFingerprintV2Function:
     Type: AWS::Serverless::Function

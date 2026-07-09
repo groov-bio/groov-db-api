@@ -1,6 +1,7 @@
 **/node_modules
 functions/.env
 **/python/python
+layers/python-v2/python
 .aws-sam
 .env.json
 **/.env
