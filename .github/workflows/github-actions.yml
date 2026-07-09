@@ -26,6 +26,17 @@ jobs:
     - name: Run tests with coverage
       run: npm run test:coverage
 
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: Install Python test dependencies
+      run: pip install boto3 requests
+
+    - name: Run Python V2 unit tests
+      run: python -m unittest discover -s tests/unit -p "test_*.py"
+
   deploy:
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
@@ -55,6 +66,12 @@ jobs:
         # Remove any old build if needed
         rm -rf python
         # Create the python folder and install dependencies *there*
+        pip install --target python -r requirements.txt
+
+    - name: Install Python dependencies for PythonV2Layer
+      run: |
+        cd layers/python-v2
+        rm -rf python
         pip install --target python -r requirements.txt
 
     - name: Setup SAM
