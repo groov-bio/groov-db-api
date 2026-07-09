@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import unittest
+from decimal import Decimal
 from unittest import mock
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -37,14 +38,18 @@ class TestGetAllTempSensorsV2(unittest.TestCase):
         self.assertEqual(res["headers"]["Access-Control-Allow-Methods"], "GET,OPTIONS")
 
     def test_200_with_mapped_submissions_on_happy_path(self):
+        # Numbers come back from DynamoDB as Decimal — integral Decimals must
+        # serialize as ints and fractional ones as floats (see _json_default).
         self.table.query.return_value = {
             "Items": [
                 {
-                    "PK": "TEMP", "SK": "uuid-1", "user": "alice", "timeSubmit": 1700000000,
-                    "sensor": {"category": "TetR", "proteins": [{"uniProtID": "P12345"}]},
+                    "PK": "TEMP", "SK": "uuid-1", "user": "alice", "timeSubmit": Decimal("1700000000"),
+                    "sensor": {"category": "TetR", "proteins": [
+                        {"uniProtID": "P12345", "wavelength": Decimal("500"), "kd": Decimal("0.5")}
+                    ]},
                 },
                 {
-                    "PK": "TEMP", "SK": "uuid-2", "user": "bob", "timeSubmit": 1700000001,
+                    "PK": "TEMP", "SK": "uuid-2", "user": "bob", "timeSubmit": Decimal("1700000001"),
                     "sensor": {"category": "LysR", "proteins": [{"uniProtID": "Q67890"}]},
                 },
             ],
@@ -55,7 +60,9 @@ class TestGetAllTempSensorsV2(unittest.TestCase):
         self.assertEqual(len(body["submissions"]), 2)
         self.assertEqual(body["submissions"][0], {
             "submissionUUID": "uuid-1", "user": "alice", "timeSubmit": 1700000000,
-            "sensor": {"category": "TetR", "proteins": [{"uniProtID": "P12345"}]},
+            "sensor": {"category": "TetR", "proteins": [
+                {"uniProtID": "P12345", "wavelength": 500, "kd": 0.5}
+            ]},
         })
         self.assertEqual(body["submissions"][1]["submissionUUID"], "uuid-2")
         self.table.query.assert_called_with(KeyConditionExpression=Key("PK").eq("TEMP"))

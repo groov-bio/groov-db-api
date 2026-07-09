@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import unittest
+from decimal import Decimal
 from unittest import mock
 
 import botocore.exceptions
@@ -631,6 +632,9 @@ class MintNextGrvIdAndRegenerateStaticJsonTest(unittest.TestCase):
         client.get_object.side_effect = self._not_found()
         mock.patch.object(s3_updater_v2, "_s3_client", return_value=client).start()
 
+        # Real DynamoDB data carries Decimals (kd here); _put_json must
+        # serialize integral Decimals as int and fractional ones as float
+        # rather than raising "Object of type Decimal is not JSON serializable".
         data = {
             "id": "GRV-T00001",
             "proteins": [
@@ -638,7 +642,7 @@ class MintNextGrvIdAndRegenerateStaticJsonTest(unittest.TestCase):
                     "alias": "A",
                     "uniprot_id": "P1",
                     "origin": [{"organism_name": "E. coli"}],
-                    "stimulus": [],
+                    "stimulus": [{"kd": Decimal("0.5"), "wavelength": Decimal("500")}],
                 }
             ],
         }
@@ -654,6 +658,17 @@ class MintNextGrvIdAndRegenerateStaticJsonTest(unittest.TestCase):
                 "v2/all-sensors.json",
             ],
         )
+        # The sensor file is the raw data dump — its Decimals must round-trip as
+        # plain JSON numbers (int for integral, float for fractional).
+        sensor_body = json.loads(
+            next(
+                c.kwargs["Body"]
+                for c in client.put_object.call_args_list
+                if c.kwargs["Key"] == "v2/sensors/tetr/GRV-T00001.json"
+            )
+        )
+        stim = sensor_body["proteins"][0]["stimulus"][0]
+        self.assertEqual(stim, {"kd": 0.5, "wavelength": 500})
         # index.json body reflects the new sensor with recomputed stats
         index_body = json.loads(
             next(
@@ -695,6 +710,24 @@ class MintNextGrvIdAndRegenerateStaticJsonTest(unittest.TestCase):
         )
         self.assertEqual(len(index_body["sensors"]), 1)
         self.assertEqual(index_body["sensors"][0]["alias"], "New")
+
+
+class LambdaInvokerDecimalTest(unittest.TestCase):
+    def test_invoke_fingerprint_serializes_decimal_data(self):
+        # The fingerprint payload carries the sensor `data` read from DynamoDB,
+        # whose numbers are Decimal. Regression: json.dumps used to raise on
+        # them, and the caller swallowed it — so fingerprints silently never
+        # regenerated on approval. Integral -> int, fractional -> float.
+        payload = {
+            "grv_id": "GRV-T00001", "category": "TetR",
+            "data": {"proteins": [{"kd": Decimal("0.5"), "wavelength": Decimal("500")}]},
+        }
+        fake_client = mock.MagicMock()
+        with mock.patch.dict(os.environ, {"FINGERPRINT_LAMBDA_NAME": "fp-fn"}), \
+                mock.patch.object(lambda_invoker.boto3, "client", return_value=fake_client):
+            lambda_invoker.invoke_fingerprint_async(payload)
+        sent = json.loads(fake_client.invoke.call_args.kwargs["Payload"].decode())
+        self.assertEqual(sent["data"]["proteins"][0], {"kd": 0.5, "wavelength": 500})
 
 
 if __name__ == "__main__":

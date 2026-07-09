@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import unittest
+from decimal import Decimal
 from unittest import mock
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -45,10 +46,14 @@ class TestGetProcessedTempV2(unittest.TestCase):
         self.assertEqual(res["statusCode"], 400)
 
     def test_200_with_mapped_row_on_happy_path(self):
+        # Numbers come back from DynamoDB as Decimal — integral Decimals must
+        # serialize as ints and fractional ones as floats (see _json_default).
         self.table.get_item.return_value = {"Item": {
             "PK": "PROCESSED", "SK": "uuid-1",
             "proposed_grv_id": "GRV-ABC",
-            "data": {"id": None, "proteins": [{"uniprot_id": "P12345"}]},
+            "data": {"id": None, "proteins": [
+                {"uniprot_id": "P12345", "wavelength": Decimal("500"), "kd": Decimal("0.5")}
+            ]},
         }}
         res = h.lambda_handler(base_event())
         self.assertEqual(res["statusCode"], 200)
@@ -58,7 +63,9 @@ class TestGetProcessedTempV2(unittest.TestCase):
             "proposed_grv_id": "GRV-ABC",
             "isEdit": False,
             "editTarget": None,
-            "data": {"id": None, "proteins": [{"uniprot_id": "P12345"}]},
+            "data": {"id": None, "proteins": [
+                {"uniprot_id": "P12345", "wavelength": 500, "kd": 0.5}
+            ]},
             "previousData": None,
         })
         self.table.get_item.assert_called_with(Key={"PK": "PROCESSED", "SK": "uuid-1"})

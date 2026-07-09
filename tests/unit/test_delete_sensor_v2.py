@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import unittest
+from decimal import Decimal
 from unittest import mock
 
 import botocore.exceptions
@@ -322,6 +323,24 @@ class RemoveStaticJsonTest(unittest.TestCase):
         with self.assertRaises(Exception) as ctx:
             s3_remover_v2.remove_static_json("TetR", "GRV-T00001")
         self.assertIn("R2 removal completed with 4 error(s)", str(ctx.exception))
+
+
+class LambdaInvokerDecimalTest(unittest.TestCase):
+    def test_invoke_fingerprint_serializes_decimal_data(self):
+        # The fingerprint payload carries the sensor `data` read from DynamoDB,
+        # whose numbers are Decimal. Regression: json.dumps used to raise on
+        # them, and the caller swallowed it — so fingerprints silently never
+        # regenerated on delete. Integral -> int, fractional -> float.
+        payload = {
+            "grv_id": "GRV-T00001", "category": "TetR",
+            "data": {"proteins": [{"kd": Decimal("0.5"), "wavelength": Decimal("500")}]},
+        }
+        fake_client = mock.MagicMock()
+        with mock.patch.dict(os.environ, {"FINGERPRINT_LAMBDA_NAME": "fp-fn"}), \
+                mock.patch.object(lambda_invoker.boto3, "client", return_value=fake_client):
+            lambda_invoker.invoke_fingerprint_async(payload)
+        sent = json.loads(fake_client.invoke.call_args.kwargs["Payload"].decode())
+        self.assertEqual(sent["data"]["proteins"][0], {"kd": 0.5, "wavelength": 500})
 
 
 if __name__ == "__main__":

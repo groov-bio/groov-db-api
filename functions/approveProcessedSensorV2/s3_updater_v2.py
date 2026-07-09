@@ -2,6 +2,7 @@ import datetime
 import json
 import os
 import re
+from decimal import Decimal
 
 import boto3
 import botocore.exceptions
@@ -50,12 +51,22 @@ def _get_json(key):
     return json.loads(resp["Body"].read())
 
 
+def _json_default(value):
+    # The published statics are built from the sensor `data` read out of
+    # DynamoDB, whose numbers are Decimal — json.dumps can't serialize those.
+    # Emit integral values as int and the rest as float, matching JS
+    # JSON.stringify so the FE sees plain numbers.
+    if isinstance(value, Decimal):
+        return int(value) if value % 1 == 0 else float(value)
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
 def _put_json(key, obj):
     client = _s3_client()
     client.put_object(
         Bucket=_bucket(),
         Key=key,
-        Body=json.dumps(obj, indent=2),
+        Body=json.dumps(obj, indent=2, default=_json_default),
         ContentType="application/json",
     )
 

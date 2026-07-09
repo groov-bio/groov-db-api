@@ -1,5 +1,6 @@
 import json
 import os
+from decimal import Decimal
 
 import boto3
 
@@ -25,6 +26,15 @@ def _cors_headers(event, methods):
 
 def _method(event):
     return (((event.get("requestContext") or {}).get("http") or {}).get("method"))
+
+
+def _json_default(value):
+    # DynamoDB's resource client returns every number as Decimal, which
+    # json.dumps can't serialize. Emit integral values as int and the rest as
+    # float, matching the JS DocumentClient + JSON.stringify output.
+    if isinstance(value, Decimal):
+        return int(value) if value % 1 == 0 else float(value)
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
 _dynamodb = None
@@ -82,7 +92,7 @@ def lambda_handler(event, context=None):
         return {
             "statusCode": 200,
             "headers": cors,
-            "body": json.dumps({"processed": processed}),
+            "body": json.dumps({"processed": processed}, default=_json_default),
         }
     except Exception as err:  # noqa: BLE001
         print(err)

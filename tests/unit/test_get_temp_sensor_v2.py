@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import unittest
+from decimal import Decimal
 from unittest import mock
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -43,15 +44,21 @@ class TestGetTempSensorV2(unittest.TestCase):
         self.assertEqual(res["statusCode"], 400)
 
     def test_200_happy_path(self):
+        # Numbers come back from DynamoDB as Decimal — integral Decimals must
+        # serialize as ints and fractional ones as floats (see _json_default).
         self.table.get_item.return_value = {"Item": {
-            "PK": "TEMP", "SK": "uuid-1", "user": "alice", "timeSubmit": 1700000000,
-            "sensor": {"category": "TetR", "proteins": [{"uniProtID": "P12345"}]},
+            "PK": "TEMP", "SK": "uuid-1", "user": "alice", "timeSubmit": Decimal("1700000000"),
+            "sensor": {"category": "TetR", "proteins": [
+                {"uniProtID": "P12345", "wavelength": Decimal("500"), "kd": Decimal("0.5")}
+            ]},
         }}
         res = h.lambda_handler(base_event())
         self.assertEqual(res["statusCode"], 200)
         self.assertEqual(json.loads(res["body"]), {
             "submissionUUID": "uuid-1", "user": "alice", "timeSubmit": 1700000000,
-            "sensor": {"category": "TetR", "proteins": [{"uniProtID": "P12345"}]},
+            "sensor": {"category": "TetR", "proteins": [
+                {"uniProtID": "P12345", "wavelength": 500, "kd": 0.5}
+            ]},
         })
         self.table.get_item.assert_called_with(Key={"PK": "TEMP", "SK": "uuid-1"})
 
