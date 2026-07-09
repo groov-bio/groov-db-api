@@ -1,6 +1,0 @@
-{
-  "name": "gettempsensorv2",
-  "version": "1.0.0",
-  "main": "getTempSensor.js",
-  "type": "module"
-}

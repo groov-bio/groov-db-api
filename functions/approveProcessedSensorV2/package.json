@@ -1,6 +1,0 @@
-{
-  "name": "approveprocessedsensorv2",
-  "version": "1.0.0",
-  "main": "approveProcessedSensor.js",
-  "type": "module"
-}
