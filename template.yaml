@@ -455,7 +455,11 @@ Resources:
       Handler: addNewSensor.lambda_handler
       Runtime: python3.14
       MemorySize: 3008
-      Timeout: 240
+      # 300s covers the worst case of a heavily-curated sensor (~14 distinct DOIs
+      # after dedup) when CrossRef throttling forces retry/backoff on several of
+      # them; well under this in the common path. Bumped from 240 alongside the
+      # CrossRef 429 resilience fix in addNewSensor.callDOI.
+      Timeout: 300
       FunctionName: !Sub ${Env}-add-new-sensor-v2-function
       Environment:
         Variables:

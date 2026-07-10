@@ -1,8 +1,39 @@
 import json
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 ALLOWED_ORIGINS = ["http://localhost:3000", "https://groov.bio", "https://www.groov.bio"]
+
+
+# Resilient + polite CrossRef access (mirrors addNewSensorV2's DOI session). The
+# original bare requests.get had no retry, so a transient CrossRef 429/5xx failed
+# the lookup outright. This module-level Session adds bounded retry + backoff on
+# 429 and transient 5xx (honoring Retry-After) and a descriptive User-Agent so
+# CrossRef routes us through its "polite pool". raise_on_status=False keeps the
+# final response so _fetch_csl's raise_for_status() still surfaces the real error.
+_DOI_USER_AGENT = "GroovDB/1.0 (+https://groov.bio)"
+
+
+def _build_doi_session():
+    session = requests.Session()
+    retry = Retry(
+        total=5,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=frozenset(["GET"]),
+        backoff_factor=1.0,
+        respect_retry_after_header=True,
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    session.headers.update({"User-Agent": _DOI_USER_AGENT})
+    return session
+
+
+_doi_session = _build_doi_session()
 
 
 def _cors_headers(event, methods):
@@ -31,7 +62,7 @@ def _err_body(status_code, message, headers):
 
 
 def _fetch_csl(doi):
-    resp = requests.get(
+    resp = _doi_session.get(
         f"https://doi.org/{doi}",
         headers={"Accept": "application/vnd.citationstyles.csl+json"},
         timeout=15,

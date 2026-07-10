@@ -11,10 +11,13 @@ import json
 import logging
 import os
 import sys
+import time
 from decimal import Decimal
 
 import boto3
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -70,12 +73,80 @@ def _table(name):
     return _dynamodb.Table(name)
 
 
-def fetch_with_timeout(method, url, timeout_ms=30000, **kwargs):
+def fetch_with_timeout(method, url, timeout_ms=30000, session=None, **kwargs):
+    # `session` lets callers route through a retry-configured requests.Session
+    # (see the CrossRef DOI block below); when None we use the module-level
+    # requests, matching the original bare-fetch behavior for UniProt/PDB.
+    caller = session if session is not None else requests
     try:
-        return requests.request(method, url, timeout=timeout_ms / 1000, **kwargs)
+        return caller.request(method, url, timeout=timeout_ms / 1000, **kwargs)
     except requests.RequestException as error:
         logger.error(f"Fetch request to {url} failed: {error}")
         raise
+
+
+# ---- CrossRef DOI resolution: resilient + polite --------------------------
+#
+# DELIBERATE RESILIENCE IMPROVEMENT OVER THE JS SOURCE. addNewSensor.js resolved
+# every citation DOI with a bare fetch and no retry, so a single CrossRef HTTP
+# 429 (or a transient 5xx) raised and aborted the ENTIRE sensor. Heavily-curated
+# sensors reliably tripped this — e.g. LmrR (A2RI36) has 32 structures but only
+# 14 distinct DOIs, and re-resolving each occurrence burst CrossRef into a 429.
+# This changes *how* DOIs are fetched, not *what* gets stored (all DOIs are still
+# resolved); three additions make resolution robust while staying polite:
+#   1) a module-level Session with bounded retry + exponential backoff on 429 and
+#      transient 5xx, honoring CrossRef's Retry-After header. raise_on_status is
+#      False so that once retries are exhausted the final response still reaches
+#      callDOI's raise_for_status() below — preserving the original error text.
+#   2) per-invocation memoization (_resolve_doi_cached) so each distinct DOI is
+#      resolved at most once, which removes the request burst that causes the 429.
+#   3) a descriptive User-Agent plus a light inter-request throttle so CrossRef
+#      routes us through its lenient "polite pool".
+
+_DOI_USER_AGENT = "GroovDB/1.0 (+https://groov.bio)"
+_DOI_MIN_INTERVAL_S = 0.1  # >= 100ms between CrossRef requests, to smooth bursts
+
+
+def _build_doi_session():
+    session = requests.Session()
+    retry = Retry(
+        total=5,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=frozenset(["GET"]),
+        backoff_factor=1.0,
+        respect_retry_after_header=True,
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    session.headers.update({"User-Agent": _DOI_USER_AGENT})
+    return session
+
+
+_doi_session = _build_doi_session()
+
+_last_doi_request_time = 0.0
+
+
+def _doi_throttle():
+    global _last_doi_request_time
+    elapsed = time.monotonic() - _last_doi_request_time
+    if elapsed < _DOI_MIN_INTERVAL_S:
+        time.sleep(_DOI_MIN_INTERVAL_S - elapsed)
+    _last_doi_request_time = time.monotonic()
+
+
+# DOI -> resolved reference memo, scoped to a single Lambda invocation. Cleared
+# at the top of each enrichment run in lambda_handler so a warm container never
+# serves a stale entry across invocations.
+_doi_cache = {}
+
+
+def _resolve_doi_cached(doi):
+    if doi not in _doi_cache:
+        _doi_cache[doi] = callDOI(doi)
+    return _doi_cache[doi]
 
 
 def validate_main_schema(data):
@@ -124,10 +195,16 @@ def callDOI(doi):
     if doi is None or doi == "":
         return {"title": None, "authors": None, "year": None, "journal": None, "doi": None, "url": None}
 
+    # Routed through _doi_session (retry/backoff + polite User-Agent) and gated by
+    # a light throttle — see the "CrossRef DOI resolution" block above. The session
+    # transparently retries 429/5xx (honoring Retry-After); raise_for_status only
+    # fires on the final response once retries are exhausted.
+    _doi_throttle()
     response = fetch_with_timeout(
         "GET",
         f"https://doi.org/{doi}",
         timeout_ms=15000,
+        session=_doi_session,
         headers={"Accept": "application/vnd.citationstyles.csl+json"},
     )
     response.raise_for_status()
@@ -159,7 +236,7 @@ def enrichDOI(items):
         return []
     out = []
     for item in items:
-        full_doi = callDOI(item.get("doi")) if item.get("doi") else None
+        full_doi = _resolve_doi_cached(item.get("doi")) if item.get("doi") else None
         out.append({**item, "fullDOI": full_doi})
     return out
 
@@ -491,9 +568,12 @@ def enrichProtein(protein):
     enriched_temperature = enrichDOI(protein.get("temperature_stimuli"))
     xref_data = tryXrefData(uni_entry, accession)
 
+    # Dedup: many PDB structures on one sensor share a citation DOI, so resolve
+    # each distinct DOI at most once per invocation (LmrR: 32 structures -> 14
+    # distinct DOIs). This is what actually keeps us under CrossRef's limit.
     enriched_structures = []
     for s in (xref_data.get("structure") or []):
-        full_doi = callDOI(s.get("doi")) if s.get("doi") else None
+        full_doi = _resolve_doi_cached(s.get("doi")) if s.get("doi") else None
         enriched_structures.append({**s, "fullDOI": full_doi})
 
     return {
@@ -601,6 +681,9 @@ def lambda_handler(event, context=None):
     except Exception:
         return errorBody(409, "A processed entry already exists for this submission", cors_headers)
 
+    # Fresh DOI memo per invocation so dedup spans all proteins in this sensor
+    # while never carrying entries over to the next invocation on a warm container.
+    _doi_cache.clear()
     try:
         per_protein_enrichment = [enrichProtein(p) for p in data["sensor"]["proteins"]]
     except Exception as err:

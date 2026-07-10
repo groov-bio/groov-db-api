@@ -176,9 +176,12 @@ class TestHappyPath(unittest.TestCase):
 
 
 class TestUnresolvableDoi(unittest.TestCase):
+    # _fetch_csl now goes through the retry-configured h._doi_session (which
+    # transparently retries 429/5xx before surfacing a final response), so these
+    # patch the session's .get rather than the bare requests module.
     def test_request_exception_returns_404(self):
-        with mock.patch.object(h, "requests") as requests_mock:
-            requests_mock.get.side_effect = requests.RequestException("boom")
+        with mock.patch.object(h, "_doi_session") as session_mock:
+            session_mock.get.side_effect = requests.RequestException("boom")
             res = h.lambda_handler(_event(query_params={"doi": "10.0/bad"}))
 
         self.assertEqual(res["statusCode"], 404)
@@ -186,8 +189,8 @@ class TestUnresolvableDoi(unittest.TestCase):
         self.assertEqual(body["message"], "Could not resolve DOI: 10.0/bad")
 
     def test_non_200_raises_for_status_returns_404(self):
-        with mock.patch.object(h, "requests") as requests_mock:
-            requests_mock.get.return_value = _mock_response(
+        with mock.patch.object(h, "_doi_session") as session_mock:
+            session_mock.get.return_value = _mock_response(
                 raise_exc=requests.HTTPError("404 Client Error")
             )
             res = h.lambda_handler(_event(query_params={"doi": "10.0/missing"}))
@@ -197,10 +200,10 @@ class TestUnresolvableDoi(unittest.TestCase):
         self.assertEqual(body["message"], "Could not resolve DOI: 10.0/missing")
 
     def test_unparsable_json_body_returns_404(self):
-        with mock.patch.object(h, "requests") as requests_mock:
+        with mock.patch.object(h, "_doi_session") as session_mock:
             resp = _mock_response()
             resp.json.side_effect = ValueError("no json")
-            requests_mock.get.return_value = resp
+            session_mock.get.return_value = resp
             res = h.lambda_handler(_event(query_params={"doi": "10.0/badjson"}))
 
         self.assertEqual(res["statusCode"], 404)
@@ -235,11 +238,11 @@ class TestEmptyMetadata(unittest.TestCase):
 
 class TestFetchCsl(unittest.TestCase):
     def test_fetch_csl_calls_doi_org_with_negotiation_header(self):
-        with mock.patch.object(h, "requests") as requests_mock:
-            requests_mock.get.return_value = _mock_response(json_data={"title": "X"})
+        with mock.patch.object(h, "_doi_session") as session_mock:
+            session_mock.get.return_value = _mock_response(json_data={"title": "X"})
             result = h._fetch_csl("10.1/xyz")
 
-        requests_mock.get.assert_called_once_with(
+        session_mock.get.assert_called_once_with(
             "https://doi.org/10.1/xyz",
             headers={"Accept": "application/vnd.citationstyles.csl+json"},
             timeout=15,
