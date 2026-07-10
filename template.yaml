@@ -244,6 +244,11 @@ Resources:
             TableName: groov_db_table_v2
         - DynamoDBCrudPolicy:
             TableName: !Ref GroovTempTableV2
+      # insertForm.py imports `groov_models` (shared Pydantic validators),
+      # which ships in PythonV2Layer. Without this the function fails at
+      # import time with "No module named 'groov_models'".
+      Layers:
+        - !Ref PythonV2Layer
 
   EditSensorV2Function:
     Type: AWS::Serverless::Function
