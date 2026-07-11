@@ -29,7 +29,14 @@ Parameters:
     Type: String
   R2Endpoint:
     Type: String
-  
+  CloudflareApiToken:
+    Type: String
+    NoEcho: true
+    Default: ""
+  CloudflareZoneId:
+    Type: String
+    Default: ""
+
 Resources:
   GroovApi:
     Type: AWS::Serverless::HttpApi
@@ -701,6 +708,8 @@ Resources:
           R2_ACCESS_KEY_ID: !Ref R2AccessKeyId
           R2_SECRET_ACCESS_KEY: !Ref R2SecretAccessKey
           R2_ENDPOINT: !Ref R2Endpoint
+          CF_API_TOKEN: !Ref CloudflareApiToken
+          CF_ZONE_ID: !Ref CloudflareZoneId
           FINGERPRINT_LAMBDA_NAME: !Ref UpdateFingerprintV2Function
       Architectures:
         - arm64
@@ -782,6 +791,8 @@ Resources:
           R2_ACCESS_KEY_ID: !Ref R2AccessKeyId
           R2_SECRET_ACCESS_KEY: !Ref R2SecretAccessKey
           R2_ENDPOINT: !Ref R2Endpoint
+          CF_API_TOKEN: !Ref CloudflareApiToken
+          CF_ZONE_ID: !Ref CloudflareZoneId
           FINGERPRINT_LAMBDA_NAME: !Ref UpdateFingerprintV2Function
       Architectures:
         - arm64

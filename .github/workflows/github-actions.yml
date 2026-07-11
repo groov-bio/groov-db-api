@@ -139,4 +139,6 @@ jobs:
         R2AccessKeyId="${{ secrets[format('{0}_R2_ACCESS_KEY_ID', steps.env.outputs.env)] }}"
         R2SecretAccessKey="${{ secrets[format('{0}_R2_SECRET_ACCESS_KEY', steps.env.outputs.env)] }}"
         R2Endpoint="${{ secrets[format('{0}_R2_ENDPOINT', steps.env.outputs.env)] }}"
+        CloudflareApiToken="${{ secrets[format('{0}_CLOUDFLARE_API_TOKEN', steps.env.outputs.env)] }}"
+        CloudflareZoneId="${{ secrets[format('{0}_CLOUDFLARE_ZONE_ID', steps.env.outputs.env)] }}"
         --no-confirm-changeset --no-fail-on-empty-changeset

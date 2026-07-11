@@ -7,10 +7,19 @@ from decimal import Decimal
 import boto3
 import botocore.exceptions
 
+import cf_purge
+
 # V2 published statics live under the `v2/` key prefix on R2 (the FE reads
 # https://groov-api.com/v2/index.json etc.). The bucket root holds the V1
 # files, so every V2 key must carry this prefix.
 V2_PREFIX = "v2/"
+
+# Browser cache lifetime for the published statics. The Cloudflare Cache Rule
+# caches these at the edge for far longer and is purged on publish (see
+# cf_purge); this short max-age only bounds how long an end user's *browser*
+# can hold a stale copy (edge purges never reach browsers). Requires the Cache
+# Rule's Browser TTL to be set to "Respect origin TTL".
+BROWSER_CACHE_CONTROL = "public, max-age=60"
 
 
 def _s3_client():
@@ -68,6 +77,7 @@ def _put_json(key, obj):
         Key=key,
         Body=json.dumps(obj, indent=2, default=_json_default),
         ContentType="application/json",
+        CacheControl=BROWSER_CACHE_CONTROL,
     )
 
 
@@ -234,3 +244,6 @@ def regenerate_static_json(data, category, grv_id):
     _update_family_index(data, category, grv_id)
     _save_sensor_file(data, category, grv_id)
     _update_all_sensors(data)
+    # Invalidate the Cloudflare edge copies of the files we just rewrote so the
+    # new/edited sensor is visible immediately (best-effort; never raises).
+    cf_purge.purge_sensor_statics(category, grv_id)

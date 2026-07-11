@@ -5,8 +5,17 @@ import os
 import boto3
 import botocore.exceptions
 
+import cf_purge
+
 # V2 published statics live under the `v2/` key prefix on R2 (bucket root holds V1).
 V2_PREFIX = "v2/"
+
+# Browser cache lifetime for the rewritten statics. Mirrors s3_updater_v2 so a
+# delete leaves the same short browser TTL on the files it rewrites. The
+# Cloudflare edge caches longer and is purged on publish (see cf_purge); this
+# only bounds browser-side staleness. Requires the Cache Rule's Browser TTL set
+# to "Respect origin TTL".
+BROWSER_CACHE_CONTROL = "public, max-age=60"
 
 
 def _s3_client():
@@ -46,6 +55,7 @@ def _put_json(key, obj):
         Key=key,
         Body=json.dumps(obj, indent=2),
         ContentType="application/json",
+        CacheControl=BROWSER_CACHE_CONTROL,
     )
 
 
@@ -142,6 +152,11 @@ def remove_static_json(category, grv_id):
     except Exception as err:
         print(f"Failed to update all-sensors.json: {err}")
         errors.append(err)
+
+    # Invalidate the Cloudflare edge copies of the files we just rewrote/removed
+    # so the deletion is reflected immediately. Runs even if some steps above
+    # failed (we still want to purge whatever did change); best-effort, no raise.
+    cf_purge.purge_sensor_statics(category, grv_id)
 
     if errors:
         raise Exception(
