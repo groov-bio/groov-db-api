@@ -1,210 +1,368 @@
 openapi: 3.0.1
 info:
   title: Groov API
-  description: API for managing sensors and related data
-  version: 1.0.0
+  description: >-
+    API for the groovDB biosensor database (V2). Read-only sensor data is served
+    as static JSON from groov-api.com; submission, review, and search are handled
+    by the dynamic HTTP API. Sensor submissions are validated against the shared
+    Pydantic models in `groov_models` (V2 Lambda layer).
+  version: 2.0.0
 servers:
-  - url: https://groov-api.com
-    description: Static content API
   - url: /
-    description: Main API endpoints
+    description: Dynamic API (AWS HTTP API, "dev" stage)
+  - url: https://groov-api.com/v2
+    description: Static content API (published JSON on R2)
 tags:
   - name: Static Content API
-    description: Read-only endpoints served from groov-api.com for sensor data and indexes
-  - name: Sensor Management
-    description: Dynamic endpoints for submitting and managing sensor data
-  - name: Admin Functions
-    description: Administrative endpoints for processing and approving sensors
+    description: Read-only sensor data and indexes published to groov-api.com/v2
+  - name: Search
+    description: Ligand similarity and protein BLAST search
+  - name: Sensor Submission
+    description: Authenticated endpoints for proposing and editing sensors
+  - name: Admin - Submission Review
+    description: Admin endpoints for processing and approving proposed sensors
+  - name: Admin - Production
+    description: Admin endpoints that mutate production sensor data
+  - name: Utility
+    description: Contact form and API documentation
 paths:
+  # ---------------------------------------------------------------------------
+  # Static Content API (https://groov-api.com/v2)
+  # ---------------------------------------------------------------------------
   /index.json:
     get:
       tags:
         - Static Content API
       servers:
-        - url: https://groov-api.com
-      summary: All sensor search
-      description: Retrieve a list of all sensors
+        - url: https://groov-api.com/v2
+      summary: Main sensor index
+      description: >-
+        Lightweight index of every sensor plus aggregate stats. Backs the
+        homepage search. Regenerated on every approve/edit/delete.
       responses:
         "200":
-          description: A list of all sensors in the database with their ligands
+          description: Sensor index with stats
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/searchEntry'
-        "422":
-          description: An error occurred while processing ligands set
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-        "500":
-          description: An unexpected error occurred
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-        "503":
-          description: The database is not available
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-  /indexes/{family}.json:
+                $ref: '#/components/schemas/MainIndex'
+  /indexes/{category}.json:
     get:
       tags:
         - Static Content API
       servers:
-        - url: https://groov-api.com
-      summary: Page for a sensor family
-      description: Retrieve a list of sensors for a specific family
+        - url: https://groov-api.com/v2
+      summary: Per-family sensor index
+      description: >-
+        Index of sensors for a single family (or the shared "dual" bucket for
+        two-component systems). The path segment is the lower-cased family name.
       parameters:
-        - name: family
+        - name: category
           in: path
-          description: Family name to filter sensors by
           required: true
+          description: Lower-cased family name, or "dual" for two-component systems
           schema:
             type: string
-            enum: [
-              "tetr",
-              "lysr",
-              "arac",
-              "marr",
-              "laci",
-              "gntr",
-              "luxr",
-              "iclr",
-              "other"
-            ]
-            example: "tetr"
+            enum:
+              - tetr
+              - lysr
+              - arac
+              - marr
+              - laci
+              - gntr
+              - luxr
+              - iclr
+              - other
+              - ompr
+              - hiska
+              - dual
+            example: luxr
       responses:
         "200":
-          description: A list of sensors for the specified family
+          description: Family index
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/familyResponse'
-        "400":
-          description: Invalid or missing family name provided
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-        "410":
-          description: Query for family failed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-        "500":
-          description: Data formatting error occured
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-  /sensors/{family}/{sensorID}.json:
+                $ref: '#/components/schemas/FamilyIndex'
+        "404":
+          description: No index published for this family
+  /sensors/{category}/{grv_id}.json:
     get:
       tags:
         - Static Content API
       servers:
-        - url: https://groov-api.com
-      summary: Retrieve a particular sensor
-      description: Retrieve detailed information about a specific sensor
+        - url: https://groov-api.com/v2
+      summary: Full sensor record
+      description: >-
+        Complete enriched record for a single sensor, keyed by its GRV-ID and
+        family. This is the canonical stored sensor `data` object.
       parameters:
-        - name: sensorID
+        - name: category
           in: path
-          description: Uniprot ID of the sensor to retrieve (uppercase)
           required: true
+          description: Lower-cased family name, or "dual" for two-component systems
           schema:
             type: string
-            example: "O34835"
-        - name: family
+            example: luxr
+        - name: grv_id
           in: path
-          description: Family name (lowercase)
           required: true
+          description: GRV-ID of the sensor
           schema:
             type: string
-            enum: [
-              "tetr",
-              "lysr",
-              "arac",
-              "marr",
-              "laci",
-              "gntr",
-              "luxr",
-              "iclr",
-              "other"
-            ]
-            example: "arac"
+            pattern: '^GRV-[A-Z]\d{5}$'
+            example: GRV-X00001
       responses:
         "200":
-          description: Detailed information about the specified sensor
+          description: Full sensor record
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/sensor' 
+                $ref: '#/components/schemas/StoredSensor'
         "404":
           description: Sensor not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-        "422":
-          description: An error occurred while processing the sensor data
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-        "500":
-          description: An unexpected error occurred
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-        "503":
-          description: The database is not available
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
   /all-sensors.json:
     get:
       tags:
         - Static Content API
       servers:
-        - url: https://groov-api.com
-      summary: Download all sensors data
-      description: Retrieve complete data for all sensors in the database
+        - url: https://groov-api.com/v2
+      summary: Download all sensors
+      description: Complete records for every sensor in the database.
       responses:
         "200":
-          description: Complete data for all sensors
+          description: All sensor records
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/sensor'
-        "500":
-          description: An unexpected error occurred
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-        "503":
-          description: The database is not available
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-  /insertForm:
+                type: object
+                properties:
+                  version:
+                    type: string
+                    format: date-time
+                    description: ISO-8601 timestamp of when the file was last regenerated
+                  count:
+                    type: integer
+                    description: Number of sensors
+                  sensors:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StoredSensor'
+  # ---------------------------------------------------------------------------
+  # Search
+  # ---------------------------------------------------------------------------
+  /ligandSearch:
     post:
       tags:
-        - Sensor Management
-      servers:
-        - url: /
-      summary: Insert a proposed sensor into the system
-      description: Proposed sensor data to be inserted into the system
+        - Search
+      summary: Molecular similarity search (groovDB)
+      description: >-
+        Tanimoto similarity search over stored ligand Morgan fingerprints for a
+        query SMILES string.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - smiles
+              properties:
+                smiles:
+                  type: string
+                  description: Query molecule as a SMILES string
+                  example: "CCCCCCCCCC(=O)CC(=O)N[C@@H]1CCOC1=O"
+                threshold:
+                  type: number
+                  description: Minimum Tanimoto similarity (0-1)
+                  default: 0.7
+                maxResults:
+                  type: integer
+                  description: Maximum number of hits to return
+                  default: 50
+      responses:
+        "200":
+          description: Ranked list of similar ligands
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query:
+                    type: string
+                  threshold:
+                    type: number
+                  message:
+                    type: string
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ligandId:
+                          type: string
+                        sensorId:
+                          type: string
+                        similarity:
+                          type: number
+                        name:
+                          type: string
+        "400":
+          description: Missing required parameter (smiles)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "500":
+          description: An error occurred during the search
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  /ligifyLigandSearch:
+    post:
+      tags:
+        - Search
+      summary: Molecular similarity search (Ligify)
+      description: >-
+        Same as /ligandSearch but returns regulator associations and the stored
+        SMILES for each hit. Used by the Ligify sub-app.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - smiles
+              properties:
+                smiles:
+                  type: string
+                threshold:
+                  type: number
+                  default: 0.7
+                maxResults:
+                  type: integer
+                  default: 50
+      responses:
+        "200":
+          description: Ranked list of similar ligands with regulator associations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query:
+                    type: string
+                  threshold:
+                    type: number
+                  message:
+                    type: string
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ligandId:
+                          type: string
+                        regulatorId:
+                          type: string
+                        similarity:
+                          type: number
+                        name:
+                          type: string
+                        smiles:
+                          type: string
+        "400":
+          description: Missing required parameter (smiles)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "500":
+          description: An error occurred during the search
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  /ligifyBlast:
+    post:
+      tags:
+        - Search
+      summary: Protein BLAST search (Ligify)
+      description: DIAMOND blastp of a query amino-acid sequence against the Ligify database.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - sequence
+              properties:
+                sequence:
+                  type: string
+                  description: Query protein sequence (single-letter amino-acid codes)
+                identity:
+                  type: integer
+                  description: Minimum percent identity (clamped 20-100)
+                  default: 30
+                coverage:
+                  type: integer
+                  description: Minimum query coverage percent (clamped 20-100)
+                  default: 60
+                max_results:
+                  type: integer
+                  description: Maximum hits to return (clamped 1-500)
+                  default: 50
+      responses:
+        "200":
+          description: BLAST hits
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  num_results:
+                    type: integer
+                  query_length:
+                    type: integer
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        refseq_id:
+                          type: string
+                        identity:
+                          type: number
+                        coverage:
+                          type: number
+        "400":
+          description: Missing/invalid sequence or malformed JSON
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "500":
+          description: Internal server error during BLAST search
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  # ---------------------------------------------------------------------------
+  # Sensor Submission (authenticated - Cognito JWT)
+  # ---------------------------------------------------------------------------
+  /v2/insertForm:
+    post:
+      tags:
+        - Sensor Submission
+      summary: Submit a proposed sensor
+      description: >-
+        Validate a proposed sensor and write it to the temp table for admin
+        review. Rejects unknown keys, requires sensor.mechanism, enforces the DOI
+        pattern on references, and requires at least one non-empty stimulus group
+        per protein.
       security:
         - bearerAuth: []
       requestBody:
@@ -212,74 +370,220 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/sensorInput'
+              $ref: '#/components/schemas/SensorSubmission'
       responses:
         "202":
-          description: Sensor data successfully inserted
-        "400":
-          description: Invalid or missing sensor data provided
+          description: Submission accepted for review
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
+                type: object
+                properties:
+                  submissionUUID:
+                    type: string
+                    format: uuid
+        "400":
+          description: Invalid JSON or schema validation failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
         "409":
-          description: Sensor already exists within system
+          description: A protein in the submission already exists in production
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorMessage'
         "500":
-          description: An unexpected error occurred
+          description: Error checking for duplicates or writing the submission
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorMessage'
-  /getTempSensor:
+  /v2/editSensor:
+    post:
+      tags:
+        - Sensor Submission
+      summary: Propose an edit to an existing sensor
+      description: >-
+        Queue an edit to a production sensor for admin review. Protein identity
+        (uniprot_ids) and read-only fields (family, kegg_id, refseq_id, sequence,
+        type, origin, mutations) cannot be changed and are forced back to the
+        current production values. One pending edit per sensor.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - category
+                - grv_id
+                - data
+              properties:
+                category:
+                  type: string
+                  description: Family of the sensor being edited (must match data.category)
+                  example: LuxR
+                grv_id:
+                  type: string
+                  description: GRV-ID of the sensor being edited (must match data.id)
+                  example: GRV-X00001
+                data:
+                  $ref: '#/components/schemas/StoredSensor'
+                user:
+                  type: string
+                timeSubmit:
+                  type: number
+      responses:
+        "202":
+          description: Edit submitted for admin review
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  submissionUUID:
+                    type: string
+                    description: Deterministic SK, "EDIT#{grv_id}"
+        "400":
+          description: Validation failure, identity mismatch, or changed protein identity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        "404":
+          description: Sensor not found in production
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "500":
+          description: Error reading prod or writing to the processed-temp table
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  /v2/doiLookup:
     get:
       tags:
-        - Admin Functions
-      servers:
-        - url: /
-      summary: Retrieve a temporary sensor
-      description: Retrieve detailed information about a temporary sensor
+        - Sensor Submission
+      summary: Resolve a DOI to reference metadata
+      description: >-
+        Resolve a DOI via content negotiation (CSL-JSON) into a normalized
+        reference. Used by the submission and edit forms to auto-fill citations.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: doi
+          in: query
+          required: true
+          description: DOI to resolve (bare DOI or full doi.org URL)
+          schema:
+            type: string
+            example: "10.1074/jbc.M700556200"
+      responses:
+        "200":
+          description: Resolved reference metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reference:
+                    $ref: '#/components/schemas/Reference'
+        "400":
+          description: Missing required query parameter (doi)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "404":
+          description: DOI could not be resolved or has no metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  # ---------------------------------------------------------------------------
+  # Admin - Submission Review
+  # ---------------------------------------------------------------------------
+  /v2/getAllTempSensors:
+    get:
+      tags:
+        - Admin - Submission Review
+      summary: List all pending submissions
+      description: Return every unprocessed submission from the temp table.
       security:
         - adminAuth: []
       responses:
         "200":
-          description: Detailed information about the specified temporary sensor
+          description: Pending submissions
           content:
             application/json:
               schema:
-              $ref: '#/components/schemas/sensorInput' 
-        "400":
-          description: Sensor not found
+                type: object
+                properties:
+                  submissions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TempSubmission'
+        "204":
+          description: No pending submissions
+        "500":
+          description: Error querying the temp table
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorMessage'
-  /deleteTemp:
+  /v2/getTempSensor:
     get:
       tags:
-        - Admin Functions
-      servers:
-        - url: /
-      summary: Delete a temporary sensor
-      description: Delete temporary sensor due to system incompatibility
+        - Admin - Submission Review
+      summary: Get one pending submission
       security:
         - adminAuth: []
+      parameters:
+        - name: submissionUUID
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
       responses:
-        "202":
-          description: Detailed information about the specified temporary sensor
+        "200":
+          description: The requested submission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TempSubmission'
+        "400":
+          description: Missing required parameter (submissionUUID)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "404":
+          description: Submission not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
         "500":
-          description: Logged error
-  /addNewSensor:
+          description: Error fetching the submission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  /v2/deleteTemp:
     post:
       tags:
-        - Admin Functions
-      servers:
-        - url: /
-      summary: Run submitted sensor through data pipeline
-      description: Run submitted sensor through data pipeline
+        - Admin - Submission Review
+      summary: Delete a pending submission
+      description: Remove a submission from the temp table (system-incompatible entries).
       security:
         - adminAuth: []
       requestBody:
@@ -287,36 +591,44 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/sensorInput' 
+              type: object
+              required:
+                - submissionUUID
+              properties:
+                submissionUUID:
+                  type: string
+                  format: uuid
       responses:
-        "202":
-          description: Sensor data successfully processed
+        "204":
+          description: Submission deleted
         "400":
-          description: Validation error or dependent API failure
+          description: Invalid JSON or missing submissionUUID
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorMessage'
-        "409":
-          description: Sensor already exists within system
+        "404":
+          description: Submission not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorMessage'
         "500":
-          description: An unexpected error occurred
+          description: Error deleting the submission
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorMessage'
-  /approveProcessedSensor:
+  /v2/addNewSensor:
     post:
       tags:
-        - Admin Functions
-      servers:
-        - url: /
-      summary: Sensor promotion
-      description: Approve processed sensor to be added to production
+        - Admin - Submission Review
+      summary: Run a submission through the enrichment pipeline
+      description: >-
+        Enrich a submission (UniProt, KEGG, PDB, operon, DOI resolution) and
+        write the constructed sensor to the processed-temp table. Accepts either
+        `{ submissionUUID }` to load a stored submission, or a full sensor body
+        with `submissionUUID` for inline/admin processing.
       security:
         - adminAuth: []
       requestBody:
@@ -324,578 +636,883 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/approveSensorInput' 
+              oneOf:
+                - type: object
+                  required:
+                    - submissionUUID
+                  properties:
+                    submissionUUID:
+                      type: string
+                      format: uuid
+                - allOf:
+                    - $ref: '#/components/schemas/SensorSubmission'
+                    - type: object
+                      required:
+                        - submissionUUID
+                      properties:
+                        submissionUUID:
+                          type: string
+                          format: uuid
       responses:
-        "200":
-          description: Sensor data successfully approved
         "202":
-          description: Sensor data successfully approved but temp result still remains
+          description: Processing completed; sensor written to processed-temp
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  submissionUUID:
+                    type: string
+        "400":
+          description: Missing body, invalid JSON, validation failure, or enrichment error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        "404":
+          description: No submission found for the provided UUID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "409":
+          description: A processed entry already exists for this submission
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorMessage'
         "500":
-          description: Error moving sensor from temp to production
+          description: Enrichment or write failure
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorMessage'
-  
-  /getProcessedTempSensor:
+  /v2/getAllProcessedTemp:
     get:
       tags:
-        - Admin Functions
-      servers:
-        - url: /
-      summary: Retrieve a processed temporary sensor
-      description: Retrieve detailed information about a processed temporary sensor
+        - Admin - Submission Review
+      summary: List all processed submissions awaiting approval
       security:
         - adminAuth: []
-      parameters:
-        - name: family
-          in: query
-          description: Family name to filter sensors by
-          required: true
-          schema:
-            type: string
-            enum: [
-              "TETR",
-              "LYSR",
-              "ARAC",
-              "MARR",
-              "LACI",
-              "GNTR",
-              "LUXR",
-              "ICLR",
-              "OTHER"
-            ]
-            example: "TETR"
-        - name: sensorID
-          in: query
-          description: Uniprot ID of the sensor to retrieve
-          required: true
-          schema:
-            type: string
-            example: "O34835"
       responses:
         "200":
-          description: Detailed information about the specified processed temporary sensor
+          description: Processed entries
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/sensor' 
+                type: object
+                properties:
+                  processed:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProcessedEntry'
+        "204":
+          description: No processed entries
+        "500":
+          description: Error scanning the processed-temp table
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  /v2/getProcessedTemp:
+    get:
+      tags:
+        - Admin - Submission Review
+      summary: Get one processed entry
+      security:
+        - adminAuth: []
+      parameters:
+        - name: submissionUUID
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The requested processed entry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessedEntry'
         "400":
+          description: Missing required parameter (submissionUUID)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "404":
+          description: Processed entry not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "500":
+          description: Error fetching the processed entry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  /v2/approveProcessedSensor:
+    post:
+      tags:
+        - Admin - Submission Review
+      summary: Approve a processed sensor into production
+      description: >-
+        Promote a processed entry to production. New sensors are minted a GRV-ID;
+        edits overwrite the existing production row in place. Also regenerates the
+        static JSON on R2 and triggers a fingerprint refresh.
+      security:
+        - adminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - submissionUUID
+              properties:
+                submissionUUID:
+                  type: string
+      responses:
+        "200":
+          description: Sensor approved (or edit applied)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  grv_id:
+                    type: string
+                  category:
+                    type: string
+        "400":
+          description: Invalid JSON, missing submissionUUID, or unknown category/prefix
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "404":
+          description: Processed sensor not found (or prod row missing on an edit)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "409":
+          description: Sensor already has an id, or a prod row already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "500":
+          description: Error minting GRV-ID or writing to production
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  /v2/rejectProcessedSensor:
+    post:
+      tags:
+        - Admin - Submission Review
+      summary: Reject a processed sensor
+      description: Delete a processed entry without promoting it to production.
+      security:
+        - adminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - submissionUUID
+              properties:
+                submissionUUID:
+                  type: string
+      responses:
+        "204":
+          description: Processed sensor rejected
+        "400":
+          description: Invalid JSON or missing submissionUUID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "404":
+          description: Processed sensor not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "500":
+          description: Error rejecting the processed sensor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+  # ---------------------------------------------------------------------------
+  # Admin - Production
+  # ---------------------------------------------------------------------------
+  /v2/deleteSensor:
+    post:
+      tags:
+        - Admin - Production
+      summary: Delete a production sensor
+      description: >-
+        Remove a sensor from the production table, delete its static JSON from
+        R2, and trigger a fingerprint refresh.
+      security:
+        - adminAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - category
+                - grv_id
+              properties:
+                category:
+                  type: string
+                  example: LuxR
+                grv_id:
+                  type: string
+                  example: GRV-X00001
+      responses:
+        "200":
+          description: Sensor deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  grv_id:
+                    type: string
+                  category:
+                    type: string
+        "400":
+          description: Invalid JSON or missing category/grv_id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        "404":
           description: Sensor not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorMessage'
-  /rejectProcessedSensor:
-    get:
-      tags:
-        - Admin Functions
-      servers:
-        - url: /
-      summary: Reject a processed temporary sensor
-      description: Reject a processed temporary sensor due to system incompatibility
-      security:
-        - adminAuth: []
-      parameters:
-        - name: family
-          in: query
-          description: Family name to filter sensors by
-          required: true
-          schema:
-            type: string
-            enum: [
-              "TETR",
-              "LYSR",
-              "ARAC",
-              "MARR",
-              "LACI",
-              "GNTR",
-              "LUXR",
-              "ICLR",
-              "OTHER"
-            ]
-            example: "TETR"
-        - name: sensorID
-          in: query
-          description: Uniprot ID of the sensor to retrieve
-          required: true
-          schema:
-            type: string
-            example: "O34835"
-      responses:
-        "200":
-          description: Sensor data successfully rejected
         "500":
-          description: Error rejecting sensor from production
+          description: Error reading from or deleting from the production table
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorMessage'
-  /getAllTempSensors:
-    get:
+  # ---------------------------------------------------------------------------
+  # Utility
+  # ---------------------------------------------------------------------------
+  /contact_form:
+    post:
       tags:
-        - Admin Functions
-      servers:
-        - url: /
-      summary: Retrieve all temporary sensors
-      description: Retrieve detailed information about all temporary sensors
-      security:
-        - adminAuth: []
+        - Utility
+      summary: Submit the contact form
+      description: Send a contact-form message via SES. Protected by Cloudflare Turnstile.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+                - message
+                - turnstileToken
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                message:
+                  type: string
+                turnstileToken:
+                  type: string
+                  description: Cloudflare Turnstile token
       responses:
         "200":
-          description: Detailed information about all temporary sensors
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/sensorInput'
+          description: Email sent
         "400":
-          description: An error occurred getting all temporary sensors
+          description: Invalid JSON, invalid form data, or failed CAPTCHA
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorMessage'
-  /getAllProcessedTemp:
+                type: object
+                properties:
+                  error:
+                    type: string
+        "500":
+          description: Error validating CAPTCHA or sending the email
+  /swagger:
     get:
       tags:
-        - Admin Functions
-      servers:
-        - url: /
-      summary: Retrieve all processed temporary sensors
-      description: Retrieve detailed information about all processed temporary sensors
-      security:
-        - adminAuth: []
+        - Utility
+      summary: API documentation
+      description: Renders this OpenAPI spec as a Swagger UI page.
       responses:
         "200":
-          description: Detailed information about all processed temporary sensors
+          description: Swagger UI HTML page
           content:
-            application/json:
+            text/html:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/sensor'
-        "400":
-          description: An error occurred getting all processed temporary sensors
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
+                type: string
+        "500":
+          description: Failed to generate API documentation
 components:
   schemas:
-    sensor:
+    # ---- Submission payload (insertForm / addNewSensor input) --------------
+    SensorSubmission:
       type: object
+      required:
+        - sensor
       properties:
+        sensor:
+          $ref: '#/components/schemas/SensorInput'
+        user:
+          type: string
+          description: Email/identifier of the submitting user
+          nullable: true
+        timeSubmit:
+          type: number
+          description: Client-supplied submission timestamp (epoch ms)
+          nullable: true
+    SensorInput:
+      type: object
+      required:
+        - mechanism
+        - proteins
+      description: >-
+        Proposed sensor. insertForm requires `mechanism` and rejects unknown
+        keys; addNewSensor is more lenient (mechanism optional, unknown keys
+        ignored).
+      properties:
+        mechanism:
+          type: string
+          enum:
+            - Apo-repressor
+            - Apo-activator
+            - Co-repressor
+            - Co-activator
+            - Signal transduction
+          example: Co-activator
         about:
           type: string
-          description: User provided description of the sensor
-        accession:
-          type: string
-          description: The accession number of the sensor
+          maxLength: 500
+          nullable: true
+        proteins:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ProteinInput'
+    ProteinInput:
+      type: object
+      required:
+        - alias
+        - uniProtID
+        - family
+      description: >-
+        A single protein in a submission. At least one stimulus group
+        (ligands / operators / light_stimuli / temperature_stimuli) is required
+        by insertForm. OmpR and HisKA families are only valid in two-component
+        (>= 2 protein) submissions.
+      properties:
         alias:
           type: string
-          description: The alias of the sensor
+          maxLength: 16
+          pattern: '^[A-Za-z0-9_.]+$'
+          example: LasR
+        uniProtID:
+          type: string
+          pattern: '^[A-Za-z0-9_]+$'
+          example: P25084
+        accession:
+          type: string
+          description: RefSeq accession; may be empty
+          pattern: '^[A-Za-z0-9_.]*$'
+          nullable: true
+          example: NP_250121.1
         family:
           type: string
-          description: The family of the sensor
-        fullReferences:
-          type: array
-          items:
-            $ref: '#/components/schemas/fullReferenceEntry'
-          description: A list of full DOI references for the sensor
-        keggID:
-          type: string
-          description: The KEGG ID of the sensor
+          enum:
+            - TetR
+            - LysR
+            - AraC
+            - MarR
+            - LacI
+            - GntR
+            - LuxR
+            - IclR
+            - Other
+            - OmpR
+            - HisKA
+          example: LuxR
         ligands:
           type: array
           items:
-            $ref: '#/components/schemas/ligandEntry'
-          description: A list of ligands associated with the sensor
-        name:
-          type: string
-          description: The name of the sensor
-        newOperon:
-          type: object
-          description: The operon information for the sensor
-          properties:
-            genome:
-              type: string
-              description: The genome associated with the operon
-            regIndex:
-              type: integer
-              description: The index of the regulator in the operon
-            operon:
-              type: array
-              items:
-                $ref: '#/components/schemas/operonEntry'
+            $ref: '#/components/schemas/LigandInput'
         operators:
           type: array
           items:
-            $ref: '#/components/schemas/operatorEntry'
-          description: A list of operators associated with the sensor
-        organism:
+            $ref: '#/components/schemas/OperatorInput'
+        light_stimuli:
+          type: array
+          items:
+            $ref: '#/components/schemas/LightStimulusInput'
+        temperature_stimuli:
+          type: array
+          items:
+            $ref: '#/components/schemas/TemperatureStimulusInput'
+        mutations:
+          type: array
+          items:
+            $ref: '#/components/schemas/MutationEntry'
+    LigandInput:
+      type: object
+      required:
+        - doi
+        - method
+        - ref_figure
+        - name
+        - SMILES
+      properties:
+        doi:
           type: string
-          description: The organism associated with the sensor
-        organismID:
-          type: interger
-          description: The organism ID associated with the sensor
-        regulationType:
+          description: DOI (pattern-checked by insertForm; any non-empty string for addNewSensor)
+        method:
           type: string
-          description: The type of regulation (e.g., "Co-Activator")
+          enum:
+            - EMSA
+            - DNase footprinting
+            - Isothermal titration calorimetry
+            - Synthetic regulation
+            - Fluorescence polarization
+            - Surface plasmon resonance
+            - Thermal shift
+            - Spectrophotometric competition
+            - Spectral shift
+            - DNA affinity chromatography
+            - Autophosphorylation assay
+        ref_figure:
+          $ref: '#/components/schemas/RefFigure'
+        name:
+          type: string
+          maxLength: 64
+        SMILES:
+          type: string
+        regulatory_effect:
+          $ref: '#/components/schemas/RegulatoryEffect'
+        kd:
+          type: number
+          nullable: true
+    OperatorInput:
+      type: object
+      required:
+        - doi
+        - method
+        - ref_figure
+        - sequence
+      properties:
+        doi:
+          type: string
+        method:
+          type: string
+          enum:
+            - EMSA
+            - DNase footprinting
+            - Crystal structure
+            - Isothermal titration calorimetry
+            - Fluorescence polarization
+            - Surface plasmon resonance
+            - Synthetic regulation
+            - ChIP-Seq
+        ref_figure:
+          $ref: '#/components/schemas/RefFigure'
         sequence:
           type: string
-          description: The sequence of the sensor
+          maxLength: 512
+          pattern: '^[ATCGatcg]+$'
+        kd:
+          type: number
+          nullable: true
+    LightStimulusInput:
+      type: object
+      required:
+        - wavelength
+        - doi
+        - method
+        - ref_figure
+      properties:
+        wavelength:
+          type: number
+        regulatory_effect:
+          $ref: '#/components/schemas/RegulatoryEffect'
+        doi:
+          type: string
+        method:
+          type: string
+        ref_figure:
+          $ref: '#/components/schemas/RefFigure'
+    TemperatureStimulusInput:
+      type: object
+      required:
+        - temperature
+        - doi
+        - method
+        - ref_figure
+      properties:
+        temperature:
+          type: number
+        regulatory_effect:
+          $ref: '#/components/schemas/RegulatoryEffect'
+        doi:
+          type: string
+        method:
+          type: string
+        ref_figure:
+          $ref: '#/components/schemas/RefFigure'
+    MutationEntry:
+      type: object
+      required:
+        - mutations
+        - ref_type
+        - ref_id
+      properties:
+        mutations:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            maxLength: 32
+        ref_type:
+          type: string
+          enum:
+            - UniProt
+            - groovDB
+        ref_id:
+          type: string
+          maxLength: 64
+    RefFigure:
+      type: string
+      description: Figure/table reference
+      pattern: '^(Figure|Supplementary Figure|Table|Supplementary Table) [S]?[1-9]?[0-9A-Za-z]?$'
+      example: Figure 2
+    RegulatoryEffect:
+      type: string
+      description: Direction of regulation
+      nullable: true
+      enum:
+        - activates
+        - represses
+        - ""
+    # ---- Stored / enriched sensor (production data blob) -------------------
+    StoredSensor:
+      type: object
+      description: >-
+        The canonical enriched sensor record produced by the pipeline and stored
+        in the production table / published as static JSON. `id` and
+        `proposed_grv_id` are null until approval mints a GRV-ID.
+      properties:
+        id:
+          type: string
+          nullable: true
+          example: GRV-X00001
+        proposed_grv_id:
+          type: string
+          nullable: true
+        category:
+          type: string
+          description: Family bucket (or "Dual" for two-component). Set at approval.
+          example: LuxR
+        type:
+          type: string
+          enum:
+            - One Component
+            - Two Component
+            - Riboswitch
+        about:
+          type: string
+          nullable: true
+        proteins:
+          type: array
+          items:
+            $ref: '#/components/schemas/StoredProtein'
+        rna:
+          nullable: true
+        experiment:
+          nullable: true
+        promoter:
+          nullable: true
+        annotation:
+          nullable: true
+    StoredProtein:
+      type: object
+      properties:
+        alias:
+          type: string
+        uniprot_id:
+          type: string
+          nullable: true
+        refseq_id:
+          type: string
+          nullable: true
+        family:
+          type: string
+        kegg_id:
+          type: string
+          nullable: true
+        regulation_type:
+          type: string
+          nullable: true
+          description: Sensor mechanism (from the submission)
+        sequence:
+          type: string
+          nullable: true
+        stimulus:
+          type: array
+          description: Small-molecule, light, and temperature stimuli with evidence
+          items:
+            type: object
+        dna:
+          type: array
+          description: Operator binding sites
+          items:
+            type: object
+            properties:
+              sequence:
+                type: string
+              ref_figure:
+                type: string
+              doi:
+                type: string
+              method:
+                type: string
+              kd:
+                type: number
+                nullable: true
+        context:
+          type: array
+          description: Genomic/operon context
+          items:
+            type: object
         structures:
           type: array
           items:
-            type: string
-          description: A list of structures associated with the sensor
-        uniprotID:
-          type: string
-          description: The UniProt ID of the sensor
-    operatorEntry:
+            type: object
+            properties:
+              ID:
+                type: string
+                description: PDB code
+              file_location:
+                type: string
+                nullable: true
+        references:
+          type: array
+          items:
+            $ref: '#/components/schemas/Reference'
+        origin:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+                example: natural
+              organism_id:
+                type: string
+                nullable: true
+              organism_name:
+                type: string
+                nullable: true
+              parent_id:
+                type: string
+                nullable: true
+              mutations:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MutationEntry'
+        protein_interaction:
+          type: array
+          items:
+            type: object
+        metadata:
+          nullable: true
+    Reference:
       type: object
       properties:
-        doi:
+        title:
           type: string
-          description: The DOI of the operator reference
-        fullDoi:
-          $ref: '#/components/schemas/fullReferenceEntry'
-        method:
-          type: string
-          description: The method used to describe the operator
-        ref_figure:
-          type: string
-          description: The figure number in the reference where the operator is described
-        sequence:
-          type: string
-          description: The DNA sequence of the operator
-    operonEntry:
-      type: object
-      properties:
-        alias:
-          type: string
-          description: The alias of the operon
-        description:
-          type: string
-          description: A description of the operon
-        direction:
-          type: string
-          description: The direction of the operon (e.g., "-" or "+")
-        # TODO: What is the source of the link here?
-        link:
-          type: string
-          description: Operon Link ID
-        start:
-          type: integer
-          description: The start position of the operon
-        stop:
-          type: integer
-          description: The stop position of the operon
-    ligandEntry:
-      type: object
-      properties:
-        SMILES:
-          type: string
-          description: The SMILES representation of the ligand
-        doi:
-          type: string
-          description: The DOI of the ligand reference
-        fullDoi:
-          $ref: '#/components/schemas/fullReferenceEntry'
-        method:
-          type: string
-          description: The method used to describe the ligand
-        name:
-          type: string
-          description: The name of the ligand
-        ref_figure:
-          type: string
-        description: The figure number in the reference where the ligand is described
-    authorsEntry:
-      type: object
-      properties:
-        firstName:
-          type: string
-          description: The first name of the author
-        lastName:
-          type: string
-          description: The last name of the author
-    interactionEntry:
-      type: object
-      properties:
-        figure:
-          type: string
-          description: The figure number in the reference where the interaction is described
-        method:
-          type: string
-          description: The method used to describe the interaction
-        type:
-          type: string
-          description: The type of interaction (e.g., Ligand)
-    fullReferenceEntry:
-      type: object
-      properties:
+          nullable: true
         authors:
           type: array
           items:
-            $ref: '#/components/schemas/authorsEntry'
-          description: A list of authors for the reference
-        doi:
+            type: object
+            properties:
+              last_name:
+                type: string
+                nullable: true
+              first_name:
+                type: string
+                nullable: true
+        year:
           type: string
-          description: The DOI of the reference
-        interaction:
-          type: array
-          items:
-            $ref: '#/components/schemas/interactionEntry'
-          description: A list of interactions associated with the reference
+          nullable: true
         journal:
           type: string
-          description: The journal where the reference was published
-        title:
+          nullable: true
+        doi:
           type: string
-          description: The title of the reference
-        year:
-          type: integer
-          description: The year the reference was published
         url:
           type: string
-          description: The URL of the reference
-    searchEntry:
+          nullable: true
+    # ---- Admin review envelopes -------------------------------------------
+    TempSubmission:
+      type: object
+      description: A raw submission stored in the temp table.
+      properties:
+        submissionUUID:
+          type: string
+          format: uuid
+        user:
+          type: string
+          nullable: true
+        timeSubmit:
+          type: number
+          nullable: true
+        sensor:
+          $ref: '#/components/schemas/SensorInput'
+    ProcessedEntry:
+      type: object
+      description: >-
+        An enriched entry awaiting approval. Edit rows carry isEdit=true,
+        editTarget, and previousData (the pre-edit baseline for the diff view).
+      properties:
+        submissionUUID:
+          type: string
+        proposed_grv_id:
+          type: string
+          nullable: true
+        isEdit:
+          type: boolean
+        editTarget:
+          type: object
+          nullable: true
+          properties:
+            category:
+              type: string
+            grv_id:
+              type: string
+        data:
+          $ref: '#/components/schemas/StoredSensor'
+        previousData:
+          allOf:
+            - $ref: '#/components/schemas/StoredSensor'
+          nullable: true
+          description: Pre-edit prod snapshot (edit rows only; null otherwise)
+    # ---- Index files -------------------------------------------------------
+    MainIndex:
       type: object
       properties:
+        stats:
+          type: object
+          properties:
+            regulators:
+              type: integer
+            ligands:
+              type: integer
+        sensors:
+          type: array
+          items:
+            $ref: '#/components/schemas/IndexEntry'
+    IndexEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          example: GRV-X00001
         alias:
           type: string
-          description: The alias of the sensor
-        family:
+        uniprot_id:
           type: string
-          description: The family of the sensor
+        organism_name:
+          type: string
+        category:
+          type: string
         ligands:
           type: array
           items:
             type: string
-          description: A list of ligands associated with the sensor
-    familyEntry:
-      type: object
-      properties:
-        accession:
-          type: string
-          description: The accession number of the sensor
-        alias:
-          type: string
-          description: The alias of the sensor
-        keggID:
-          type: string
-          description: The KEGG ID of the sensor
-        organism:
-          type: string
-          description: The organism associated with the sensor
-        uniprotID:
-          type: string
-          description: The UniProt ID of the sensor
-        ligands:
-          type: array
-          items:
-            type: string
-          description: A list of ligands associated with the sensor
-    familyResponse:
+    FamilyIndex:
       type: object
       properties:
         count:
           type: integer
-          description: The number of sensors in the family
         data:
           type: array
           items:
-            $ref: '#/components/schemas/familyEntry'
-    sensorInput:
+            $ref: '#/components/schemas/FamilyIndexEntry'
+    FamilyIndexEntry:
       type: object
       properties:
-        unitProtID:
+        id:
           type: string
-          description: The UniProt ID of the sensor
-          pattern: '^[A-Za-z0-9_]'
-        family:
-          type: string
-          description: The family of the sensor
-          enum: [
-            "TETR",
-            "LYSR",
-            "ARAC",
-            "MARR",
-            "LACI",
-            "GNTR",
-            "LUXR",
-            "ICLR",
-            "OTHER"
-          ]
-          example: "TETR"
-        about:
-          ref: '#/components/schemas/aboutNewSensor'
-        operator:
-          type: object
-          properties:
-            data:
-              type: array
-              items:
-                $ref: '#/components/schemas/operatorNewSensor'
-        ligands:
-          type: object
-          properties:
-            data:
-              type: array
-              items:
-                $ref: '#/components/schemas/ligandNewSensor'
-        user:
-          type: string
-          description: The user who proposed the sensor
-        timeSubmit:
-          type: integer
-          description: The timestamp the sensor was submitted
-          example: 1743336304
-    lineageEntry:
-      type: object
-      properties:
-        child_id:
-          type: string
-          description: To be used in the future
-          nullable: true
-        mutation:
-          type: string
-          description: To be used in the future
-          nullable: true
-        parent_id:
-          type: string
-          description: To be used in the future
-          nullable: true
-        doi: 
-          type: string
-          description: The DOI of the lineage reference
-          nullable: true
-    ligandNewSensor:
-      type: object
-      properties:
-        doi:
-          type: string
-          description: The DOI of the ligand reference
-        method:
-          type: string
-          description: The method used to describe the ligand
-          enum: [
-            "EMSA",
-            "DNAse footprinting",
-            "Isothermal titration calorimetry",
-            "Flourescence polarization",
-            "Surface plasmon resonance",
-            "Sythentic regulation"
-          ]
-          example: "EMSA"
-        ref_figure:
-          type: string
-          description: The figure number in the reference where the ligand is described
-          pattern: '^(Figure|Table) [S]?[1-9]?[0-9A-Za-z]?$'
-        name:
-          type: string
-          description: The name of the ligand
-          maxLength: 64
-        SMILES:
-          type: string
-          description: The SMILES representation of the ligand
-    operatorNewSensor:
-      type: object
-      properties:
-        doi:
-          type: string
-          description: The DOI of the operator reference
-        method:
-          type: string
-          description: The method used to describe the operator
-          enum: [
-            "EMSA",
-            "DNAse footprinting",
-            "Crystal structure",
-            "Isothermal titration calorimetry",
-            "Flourescence polarization",
-            "Surface plasmon resonance",
-            "Sythentic regulation"
-          ]
-          example: "EMSA"
-        ref_figure:
-          type: string
-          description: The figure number in the reference where the operator is described
-          pattern: '^(Figure|Table) [S]?[1-9]?[0-9A-Za-z]?$'
-        sequence:
-          type: string
-          description: The DNA sequence of the operator
-          pattern: '[ATCGatcg]'
-          maxLength: 512
-    aboutNewSensor:
-      type: object
-      properties:
-        about:
-          type: string
-          description: User provided description of the sensor
-        accession:
-          type: string
-          description: The accession number of the sensor
-          pattern: '[A-Za-z_]'
         alias:
           type: string
-          description: The alias of the sensor
-          pattern: '[A-Za-z]'
-        mechanism:
+        uniprot_id:
           type: string
-          description: The mechanism of the sensor
-          enum: [
-            "Co-activator",
-            "Co-repressor",
-            "Apo-activator",
-            "Apo-repressor",
-          ]
-          example: "Co-activator"
-    approveSensorInput:
-      type: object
-      properties:
-        unitProtID:
+        kegg_id:
           type: string
-          description: The ID of the sensor to be approved
-          pattern: '^[A-Za-z0-9_]'
-        family:
+          nullable: true
+        organism_name:
           type: string
-          description: The family of the sensor
-          enum: [
-            "TETR",
-            "LYSR",
-            "ARAC",
-            "MARR",
-            "LACI",
-            "GNTR",
-            "LUXR",
-            "ICLR",
-            "OTHER"
-          ]
-          example: "TETR"
+        ligands:
+          type: array
+          items:
+            type: string
+    # ---- Errors ------------------------------------------------------------
     ErrorMessage:
       type: object
       properties:
         message:
           type: string
-          description: Error message describing what went wrong
+          description: Human-readable error message
       required:
         - message
+    ValidationError:
+      type: object
+      properties:
+        type:
+          type: string
+          example: Validation Error
+        errors:
+          type: array
+          items:
+            type: string
+            description: 'One "path: message" string per failed field'
   securitySchemes:
-    adminAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-      description: Cognito JWT token with Admin permissions required for authentication
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Cognito JWT token required for authentication
-      DefinitionUri: swagger.yaml
+      description: Cognito JWT access token (any authenticated user)
+    adminAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Cognito JWT for a user in the Admin group (validated by the admin Lambda authorizer)
