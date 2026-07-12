@@ -23,16 +23,17 @@ The API is built using:
 - **Amazon DynamoDB**: NoSQL database for sensor data storage
 - **AWS S3/Cloudflare R2**: Object storage for data files and molecular fingerprints
 - **AWS Cognito**: User authentication and authorization
+- **Python 3.14**: Primary runtime for the V2 sensor API functions (submission, review, enrichment), with Pydantic validation
 - **Python/RDKit**: Molecular fingerprint generation and similarity searching
-- **Node.js**: Primary runtime for API functions
+- **Node.js**: Runtime for the docs, admin authorizer, and contact-form functions
 
 ## Prerequisites
 
 - [Docker](https://docs.docker.com/engine/install/)
 - [AWS SAM CLI](https://github.com/aws/aws-sam-cli)
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
-- [Node.js 20+](https://nodejs.org/)
-- [Python 3.12+](https://www.python.org/downloads/)
+- [Node.js 24+](https://nodejs.org/)
+- [Python 3.14+](https://www.python.org/downloads/) (V2 API functions; the shared Python layer and molecular tooling target 3.12)
 
 ### Optional but Recommended
 
@@ -127,7 +128,7 @@ cd scripts && python3 createFingerprint.py --upload && cd ..
 
 ```bash
 # Start the API with hot reloading
-sam local start-api --env-vars .env.json --warm-containers EAGER -t template-local.yaml --skip-pull-image
+sam local start-api --env-vars .env.json --warm-containers EAGER --skip-pull-image
 ```
 
 The API will be available at `http://localhost:3000`
@@ -151,29 +152,40 @@ npm run stop:local
 
 ## API Endpoints
 
-### Public Endpoints
+The full request/response schemas are documented in the interactive Swagger UI at `GET /swagger` (spec: `functions/docs/swagger.yaml`).
 
-- `GET /search` - Search biosensors
-- `GET /getSensor` - Get individual sensor details
-- `GET /getPages` - Get family page information
-- `GET /downloadAllSensors` - Download complete dataset
+### Static Content (read-only JSON, served from `https://groov-api.com/v2`)
+
+- `GET /v2/index.json` - Main sensor index with aggregate stats
+- `GET /v2/indexes/{family}.json` - Per-family index (lower-cased family, or `dual` for two-component)
+- `GET /v2/sensors/{family}/{grv_id}.json` - Full enriched sensor record
+- `GET /v2/all-sensors.json` - Complete dataset
+
+### Public Endpoints (dynamic API)
+
 - `POST /ligandSearch` - Molecular similarity search
+- `POST /ligifyLigandSearch` - Molecular similarity search with regulator associations (Ligify)
+- `POST /ligifyBlast` - Protein BLAST search (Ligify)
 - `POST /contact_form` - Contact form submission
 - `GET /swagger` - API documentation
 
-### Authenticated Endpoints
+### Authenticated Endpoints (Cognito JWT)
 
-- `POST /insertForm` - Submit new sensor (requires login)
-- `POST /updateSensor` - Edit existing sensor (requires login)
+- `POST /v2/insertForm` - Submit a proposed sensor for review
+- `POST /v2/editSensor` - Propose an edit to an existing sensor
+- `GET /v2/doiLookup` - Resolve a DOI to reference metadata
 
-### Admin Endpoints
+### Admin Endpoints (Cognito admin group)
 
-- `GET /getAllTempSensors` - View pending submissions
-- `GET /getProcessedTemp` - View processed submissions
-- `POST /approveProcessedSensor` - Approve submissions
-- `POST /rejectProcessedSensor` - Reject submissions
-- `POST /addNewSensor` - Add sensors to main database
-- `POST /deleteTemp` - Delete temporary submissions
+- `GET /v2/getAllTempSensors` - List pending submissions
+- `GET /v2/getTempSensor` - Get one pending submission
+- `POST /v2/deleteTemp` - Delete a pending submission
+- `POST /v2/addNewSensor` - Run a submission through the enrichment pipeline
+- `GET /v2/getAllProcessedTemp` - List processed submissions awaiting approval
+- `GET /v2/getProcessedTemp` - Get one processed entry
+- `POST /v2/approveProcessedSensor` - Approve a processed sensor into production
+- `POST /v2/rejectProcessedSensor` - Reject a processed sensor
+- `POST /v2/deleteSensor` - Delete a production sensor
 
 ## Data Structure and Setup
 
@@ -304,7 +316,7 @@ Production requires these environment variables:
 - Implement proper error handling and logging
 - Follow AWS Lambda best practices
 - Use TypeScript-style JSDoc comments
-- Validate inputs with Joi schemas
+- Validate inputs with Pydantic models (Python/V2) or Joi schemas (Node)
 
 ### Local Testing with Bruno
 
@@ -313,7 +325,7 @@ The `bruno/` directory contains API test collections. Import into Bruno for comp
 ## Security
 
 - All admin endpoints require proper authorization
-- Input validation using Joi schemas
+- Input validation using Pydantic models (Python/V2) and Joi schemas (Node)
 - Secrets managed through environment variables
 - CORS enabled for frontend integration
 - Rate limiting and throttling configured
@@ -342,7 +354,7 @@ The `bruno/` directory contains API test collections. Import into Bruno for comp
 View logs for debugging:
 ```bash
 # CloudWatch logs (production)
-sam logs -n SearchFunction --stack-name your-stack-name --tail
+sam logs -n AddNewSensorV2Function --stack-name your-stack-name --tail
 
 # Local logs
 docker-compose logs dynamodb-local
