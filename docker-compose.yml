@@ -1,26 +1,91 @@
-version: '3.8'
-services:
-  dynamodb-local:
-    image: amazon/dynamodb-local
-    container_name: dynamodb-local
-    ports:
-      - "8000:8000"
-    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath /home/dynamodblocal"
-    volumes:
-      - dynamodb-data:/home/dynamodblocal
-    working_dir: /home/dynamodblocal
+# Local, single-command emulation of the groov-db-api V2 API on Floci (a free
+# LocalStack-community drop-in) + the groov-db-ui frontend.
+#
+# Run `docker compose up` from THIS directory (the groov-db-api repo root) --
+# floci-init derives Lambda hot-reload paths from ${PWD}, which must resolve
+# to this repo's absolute path on the host.
+#
+#   floci      -- DynamoDB + S3 + Cognito + API Gateway (HTTP API) + real
+#                 Lambda containers, code hot-reloaded (bind-mounted) from
+#                 functions/. No rebuild/redeploy needed after editing a
+#                 handler .py -- just re-invoke.
+#   floci-init -- one-shot provisioner (floci/provision.sh): tables, buckets,
+#                 Cognito, layers, the 12 V2 Lambda functions + authorizer +
+#                 updateFingerprintV2, the HTTP API/routes/authorizers, and
+#                 writes runtime values (API id, Cognito ids) to the
+#                 `floci_shared` volume for the UI to pick up.
+#   ui         -- groov-db-ui (../groov-db-ui), reads floci_shared/ui.env at
+#                 startup.
+#
+# Region is us-east-1 everywhere in this stack (Floci resolves header-less
+# requests to us-east-1; anything else 404s on invoke -- see floci/provision.sh).
 
-  s3-local:
-    image: adobe/s3mock
-    container_name: s3-local
+services:
+  floci:
+    image: floci/floci:latest
+    container_name: groov-floci
     ports:
-      - "9090:9090"
+      - "4566:4566"
     environment:
-      - initialBuckets=my-test-bucket
-      - debug=true
+      - FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ENABLED=true
+      - DEBUG=${FLOCI_DEBUG:-0}
+      # Allow the CRA dev origin through Floci's global CORS filter so the UI's
+      # browser-side Cognito InitiateAuth (raw fetch to :4566 with X-Amz-Target)
+      # passes preflight. These EXTRA_* vars add to Floci's built-in defaults.
+      - FLOCI_SECURITY_EXTRA_CORS_ALLOWED_ORIGINS=http://localhost:3000
+      - FLOCI_SECURITY_EXTRA_CORS_ALLOWED_HEADERS=x-amz-target,x-amz-user-agent,x-amz-content-sha256,x-amz-date,x-amz-security-token,authorization,content-type
     volumes:
-      - s3-data:/s3mockdata
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+
+  floci-init:
+    image: public.ecr.aws/aws-cli/aws-cli:latest
+    container_name: groov-floci-init
+    entrypoint: ["/bin/bash", "/workspace/floci/provision.sh"]
+    depends_on:
+      floci:
+        condition: service_healthy
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_ENDPOINT_URL=http://floci:4566
+      # Absolute HOST path to this repo, used to build the hot-reload
+      # S3Key=<HOST_ABS_PATH_TO_FN_DIR> values -- Floci bind-mounts those via
+      # the HOST docker daemon (shared via the docker.sock mount on `floci`),
+      # not via this container's own filesystem view.
+      - HOST_API_DIR=${PWD}
+    volumes:
+      - .:/workspace:ro
+      - floci_shared:/shared
+
+  # Exact shape locked with the UI agent: their Dockerfile bakes
+  # ENTRYPOINT ["./docker-entrypoint.sh"] + CMD ["npm","start"], and the
+  # entrypoint sources /shared/ui.env before starting CRA -- so this block
+  # must NOT override command/entrypoint, and node_modules must stay an
+  # anonymous volume (not bind-mounted from the host, not a named volume).
+  ui:
+    build:
+      context: ../groov-db-ui
+    container_name: groov-ui
+    ports:
+      - "3000:3000"
+    depends_on:
+      floci-init:
+        condition: service_completed_successfully
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+      - WDS_SOCKET_PORT=0
+    volumes:
+      - ../groov-db-ui:/app
+      - /app/node_modules
+      - floci_shared:/shared:ro
 
 volumes:
-  dynamodb-data:
-  s3-data: 
+  floci_shared:

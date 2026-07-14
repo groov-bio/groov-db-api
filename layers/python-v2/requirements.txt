@@ -1,2 +1,7 @@
 requests
 pydantic
+# Used only by the local (Floci) adminAuthorizer.py port to verify Cognito
+# JWTs. Deliberately installed WITHOUT the `cryptography` extra so it falls
+# back to its pure-Python RSA backend (rsa/pyasn1/ecdsa) -- avoids
+# architecture-specific native wheels inside the Lambda container.
+python-jose==3.5.0

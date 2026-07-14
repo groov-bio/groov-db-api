@@ -2,6 +2,8 @@
 functions/.env
 **/python/python
 layers/python-v2/python
+layers/rdkit/python
+layers/*/layer.zip
 .aws-sam
 .env.json
 **/.env

@@ -28,9 +28,10 @@ _dynamodb = None
 def _table(name):
     global _dynamodb
     if _dynamodb is None:
+        # No endpoint_url override for IS_LOCAL: boto3 auto-targets the
+        # Floci-injected AWS_ENDPOINT_URL env var when present inside the
+        # Lambda container. Prod is unaffected (that env var is unset there).
         kwargs = {"region_name": "us-east-2"}
-        if os.environ.get("IS_LOCAL"):
-            kwargs["endpoint_url"] = "http://host.docker.internal:8000"
         _dynamodb = boto3.resource("dynamodb", **kwargs)
     return _dynamodb.Table(name)
 
