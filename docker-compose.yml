@@ -9,20 +9,29 @@
 #                 Lambda containers, code hot-reloaded (bind-mounted) from
 #                 functions/. No rebuild/redeploy needed after editing a
 #                 handler .py -- just re-invoke.
-#   floci-init -- one-shot provisioner (floci/provision.sh): tables, buckets,
+#   floci-init -- idempotent Python provisioner (floci/provisioner.py) that
+#                 derives the local stack from template.yaml: tables, buckets,
 #                 Cognito, layers, the 12 V2 Lambda functions + authorizer +
 #                 updateFingerprintV2, the HTTP API/routes/authorizers, and
 #                 writes runtime values (API id, Cognito ids) to the
-#                 `floci_shared` volume for the UI to pick up.
+#                 `floci_shared` volume for the UI to pick up. Safe to re-run
+#                 without a `down -v` first -- see floci/provisioner.py.
 #   ui         -- groov-db-ui (../groov-db-ui), reads floci_shared/ui.env at
 #                 startup.
 #
-# Region is us-east-1 everywhere in this stack (Floci resolves header-less
-# requests to us-east-1; anything else 404s on invoke -- see floci/provision.sh).
+# Region is NOT us-east-1 everywhere in this stack: API Gateway / Cognito /
+# Lambda are us-east-1 (Floci resolves header-less requests to us-east-1;
+# anything else 404s on invoke), but DynamoDB tables are deliberately
+# us-east-2 -- every V2 handler hardcodes region_name="us-east-2" in its
+# boto3.resource("dynamodb", ...) call, and Floci scopes DynamoDB per-region.
+# See floci/provisioner.py for the full derivation.
 
 services:
   floci:
-    image: floci/floci:latest
+    # Pinned to a known-good digest rather than :latest -- floci/floci is a
+    # moving target and an unpinned tag can silently change local-vs-prod
+    # behavior underneath this whole stack.
+    image: floci/floci@sha256:690f3077367a866a28509a35bdf1258246bf20b19ec06fcb59093726ee60f7f4
     container_name: groov-floci
     ports:
       - "4566:4566"
@@ -36,6 +45,16 @@ services:
       - FLOCI_SECURITY_EXTRA_CORS_ALLOWED_HEADERS=x-amz-target,x-amz-user-agent,x-amz-content-sha256,x-amz-date,x-amz-security-token,authorization,content-type
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # Quiet Floci's per-invocation container-lifecycle chatter that otherwise
+      # floods `docker compose logs floci` / Docker Desktop. Floci is a Quarkus
+      # NATIVE binary; it only honors log-level/filter overrides through a
+      # runtime config *file* at /app/config/application.properties (relative to
+      # its /app workdir) -- the equivalent QUARKUS_LOG_CATEGORY__*__LEVEL env
+      # vars are silently ignored for loggers not baked in at build time. See
+      # that file for what's silenced (Lambda stdout + real errors are kept).
+      # Comment this mount out and recreate `floci` for the full firehose (the
+      # message filter in that file suppresses the lines even under FLOCI_DEBUG).
+      - ./floci/floci-log.properties:/app/config/application.properties:ro
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:4566/_localstack/health"]
       interval: 5s
@@ -44,9 +63,12 @@ services:
       start_period: 10s
 
   floci-init:
-    image: public.ecr.aws/aws-cli/aws-cli:latest
+    # Python provisioner (floci/provisioner.py) that derives the local stack
+    # from template.yaml, instead of the old hand-maintained provision.sh
+    # mirror. Entrypoint is baked into floci/Dockerfile.
+    build:
+      context: ./floci
     container_name: groov-floci-init
-    entrypoint: ["/bin/bash", "/workspace/floci/provision.sh"]
     depends_on:
       floci:
         condition: service_healthy
@@ -67,8 +89,18 @@ services:
   # Exact shape locked with the UI agent: their Dockerfile bakes
   # ENTRYPOINT ["./docker-entrypoint.sh"] + CMD ["npm","start"], and the
   # entrypoint sources /shared/ui.env before starting CRA -- so this block
-  # must NOT override command/entrypoint, and node_modules must stay an
-  # anonymous volume (not bind-mounted from the host, not a named volume).
+  # must NOT override command/entrypoint.
+  #
+  # `develop.watch` (Compose 2.31+) replaces the old host bind mount +
+  # anonymous node_modules volume: source changes are synced straight into
+  # the built image's /app instead of overlaying the host tree over it, so a
+  # `package.json` change (which used to leave a stale baked node_modules
+  # under the host bind mount) now triggers a full image rebuild instead.
+  # This also removes the need for the CRA polling env vars. NOTE: watch
+  # actions only engage under `docker compose up --watch` (or
+  # `docker compose watch`) -- plain `docker compose up` will not sync/rebuild.
+  # UNVERIFIED: whether dropping the bind mount affects the entrypoint's
+  # /shared/ui.env sourcing or CRA hot-reload -- flagging for live check.
   ui:
     build:
       context: ../groov-db-ui
@@ -79,13 +111,21 @@ services:
       floci-init:
         condition: service_completed_successfully
     environment:
-      - CHOKIDAR_USEPOLLING=true
-      - WATCHPACK_POLLING=true
       - WDS_SOCKET_PORT=0
     volumes:
-      - ../groov-db-ui:/app
-      - /app/node_modules
       - floci_shared:/shared:ro
+    develop:
+      watch:
+        - action: sync
+          path: ../groov-db-ui/src
+          target: /app/src
+        - action: sync
+          path: ../groov-db-ui/public
+          target: /app/public
+        - action: rebuild
+          path: ../groov-db-ui/package.json
+        - action: rebuild
+          path: ../groov-db-ui/package-lock.json
 
 volumes:
   floci_shared:
