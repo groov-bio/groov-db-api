@@ -5,12 +5,10 @@ layers/python-v2/python
 layers/rdkit/python
 layers/*/layer.zip
 .aws-sam
-.env.json
 **/.env
 **/.DS_Store
 scripts/node_modules
 s3
-env.json
 **/coverage/**
 **/__pycache__/**
 TODO.md

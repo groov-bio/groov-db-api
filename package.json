@@ -4,12 +4,6 @@
   "description": "GrooV API with local development setup",
   "type": "module",
   "scripts": {
-    "start:local": "chmod +x ./start-local.sh && ./start-local.sh",
-    "dynamo:start": "docker-compose up -d dynamodb-local",
-    "s3:start": "docker-compose up -d s3-local",
-    "setup:tables": "node scripts/setup-local.js",
-    "sam:start": "sam local start-api --env-vars .env.json --warm-containers EAGER",
-    "stop:local": "docker-compose down",
     "test": "NODE_OPTIONS=\"--experimental-vm-modules\" jest",
     "test:watch": "NODE_OPTIONS=\"--experimental-vm-modules\" jest --watch",
     "test:coverage": "NODE_OPTIONS=\"--experimental-vm-modules\" jest --coverage"
