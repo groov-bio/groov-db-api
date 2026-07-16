@@ -112,16 +112,35 @@ services:
         condition: service_completed_successfully
     environment:
       - WDS_SOCKET_PORT=0
+      # Which seeded user the UI auto-signs-in as under local auth. Empty =>
+      # the shim's default (admin@groov.local). Set by `floci/dev.sh --user`,
+      # which exports GROOV_LOCAL_AUTH_USER before `docker compose up`; changing
+      # it recreates this container so CRA re-reads it at `npm start`.
+      - REACT_APP_LOCAL_AUTH_USER=${GROOV_LOCAL_AUTH_USER:-}
+      # `src`/`public` are bind-mounted below, not sync-copied. Docker Desktop's
+      # virtualized filesystem does not forward host inotify/fsevents into the
+      # container, so webpack-dev-server's default watcher would never see edits
+      # through the mount. Polling makes it re-read the files on an interval,
+      # which is reliable across the VM boundary. (chokidar for react-scripts'
+      # own watch; watchpack for webpack 5's.)
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
     volumes:
       - floci_shared:/shared:ro
+      # Bind-mount the UI source straight into the container instead of relying
+      # on `docker compose watch`'s `sync` copy. On this macOS/Docker Desktop
+      # setup that copy silently no-ops for these `../`-sibling paths: `compose
+      # watch` PRINTS "Syncing service ui after N changes" but nothing lands in
+      # the container, so edits never hot-reload (see api_v2_docs/
+      # LOCAL_DEV_INCONSISTENCY_FINDING.md). A bind mount has no copy step to
+      # fail — the container reads the host files directly. Only src/public are
+      # mounted, so the image's /app/node_modules stays intact.
+      - ../groov-db-ui/src:/app/src
+      - ../groov-db-ui/public:/app/public
     develop:
       watch:
-        - action: sync
-          path: ../groov-db-ui/src
-          target: /app/src
-        - action: sync
-          path: ../groov-db-ui/public
-          target: /app/public
+        # A package.json / lockfile change needs a full image rebuild (new deps),
+        # which a bind mount can't provide — keep these two as rebuild triggers.
         - action: rebuild
           path: ../groov-db-ui/package.json
         - action: rebuild

@@ -18,6 +18,9 @@ from `functions/`. The UI runs `react-scripts start` with Fast Refresh.
 # from the groov-db-api repo root:
 bash floci/dev.sh                      # ⭐ recommended: build + provision, print a ready
                                        #    summary (URLs/login/commands), then `watch`
+bash floci/dev.sh --detach             #    …same, but background the watcher and free the terminal
+bash floci/dev.sh --user               #    sign the UI in as the non-admin seed (user@groov.local)
+bash floci/dev.sh --help               #    all flags: detach, user/admin, no-build (see §4)
 docker compose up                      # start everything (add -d to detach); idempotent, stable API id
 docker compose watch                   # like `up`, plus live UI source sync (see §7)
 docker compose down                    # stop (keeps data volumes)
@@ -38,7 +41,9 @@ docker compose build ui                # rebuild UI image after a dependency cha
 | V2 API base | `http://localhost:4566/execute-api/<API_ID>/dev` (API_ID is stable across re-runs — see §5) |
 
 **Log in (local):** open http://localhost:3000, click **Sign In**. It logs you in
-as the seeded admin automatically — no AWS, no hosted UI.
+automatically — no AWS, no hosted UI — as whichever seeded user the stack was
+started for (default: admin). Launch with `floci/dev.sh --user` to sign in as the
+non-admin seed instead (§4).
 Seeded admin: **`admin@groov.local` / `GroovLocal1!`** (group `Admin`).
 Also seeded: **`user@groov.local` / `GroovLocal1!`** (no group) — for testing
 non-admin authorization.
@@ -144,6 +149,27 @@ Startup order (enforced by compose):
 - `docker compose logs ui` shows `Compiled successfully` and the app answers on
   http://localhost:3000.
 
+### The `floci/dev.sh` launcher (flags)
+
+`floci/dev.sh` is the recommended entry point: it builds + provisions, waits for
+the UI to actually compile, prints the ready summary, then runs the file watcher.
+Run `bash floci/dev.sh --help` for the full list; the flags are:
+
+| Flag | Effect |
+|---|---|
+| *(none)* | Build, provision, then watch in the **foreground** — Ctrl-C stops watching, containers stay up. Signs in as **admin**. |
+| `-d`, `--detach` | Run the watcher in the **background** and return the terminal; its output goes to `./.floci-watch.log`. Stop it with `docker compose down` or by re-running `dev.sh`. (The stack always runs detached — this only frees the watcher, since Compose v2.31 `watch` has no native detach.) |
+| `--user[=EMAIL]` | Sign the UI in as the seeded **non-admin** `user@groov.local` (or an explicit seeded `EMAIL`) instead of the admin. |
+| `--admin` | Sign in as the seeded admin `admin@groov.local` (the default; explicit). |
+| `--no-build` | Skip forcing an image rebuild — a faster restart when no Dockerfile or `package.json` changed. |
+
+`--user`/`--admin` export `GROOV_LOCAL_AUTH_USER`, which `docker-compose.yml`
+interpolates into the `ui` container's `REACT_APP_LOCAL_AUTH_USER`; the auth shim
+reads it to pick the seeded identity (default `admin@groov.local`), and changing
+it recreates the `ui` container so CRA re-reads it. A plain `docker compose up`
+leaves the var empty, so it always signs in as admin — `--user` is a `dev.sh`
+convenience.
+
 ## 5. URLs, ports & the dynamic API id
 
 - **UI:** http://localhost:3000
@@ -173,10 +199,11 @@ behind `REACT_APP_LOCAL_AUTH`.
 - With `REACT_APP_LOCAL_AUTH=true` (set in the UI's committed `.env.development`):
   clicking **Sign In** calls Cognito `InitiateAuth` (`USER_PASSWORD_AUTH`)
   directly against the local pool (`REACT_APP_COGNITO_ENDPOINT`,
-  `http://localhost:4566`) using the baked seeded-admin creds, stores the
-  returned tokens, and attaches the **ID token** as the raw `Authorization`
-  header on V2 API calls (byte-identical to prod, so the server path is
-  unchanged).
+  `http://localhost:4566`) using the selected seeded user's creds
+  (`REACT_APP_LOCAL_AUTH_USER`, default `admin@groov.local`; see
+  `dev.sh --user` in §4), stores the returned tokens, and attaches the **ID
+  token** as the raw `Authorization` header on V2 API calls (byte-identical to
+  prod, so the server path is unchanged).
 - **Seeded users (set in `floci/provisioner.py`):**
   **`admin@groov.local` / `GroovLocal1!`**, group **`Admin`**; and
   **`user@groov.local` / `GroovLocal1!`**, no group — for testing non-admin
@@ -216,6 +243,43 @@ fresh token against the current pool.
   `floci` keeps running. The provisioner finds the `groov-local` pool by name and
   reuses it (same pool id, same keys), so an already-open session keeps working
   (see §9).
+
+### Calling the API directly (curl / scripts)
+
+You don't need the UI to exercise V2 — authenticate against the local Cognito
+pool and call the routes yourself. `floci/smoke.sh` is the worked, automated
+example (a 17-check auth + route smoke); the manual version is three steps
+(needs `jq`):
+
+```bash
+# 1. Pull the per-run API base + Cognito client id the provisioner wrote to the
+#    shared volume (API_BASE already includes the stable API id and /dev stage):
+eval "$(docker run --rm -v groov-db-api_floci_shared:/s alpine cat /s/ui.env \
+  | sed -n 's/^REACT_APP_API_BASE=/API_BASE=/p; s/^REACT_APP_COGNITO_CLIENT_ID=/CLIENT_ID=/p')"
+
+# 2. Log in (USER_PASSWORD_AUTH) and grab the ID token. Swap in user@groov.local
+#    to test the non-admin path — both seeds use password GroovLocal1!.
+TOKEN="$(curl -sS -X POST http://localhost:4566/ \
+  -H 'Content-Type: application/x-amz-json-1.1' \
+  -H 'X-Amz-Target: AWSCognitoIdentityProviderService.InitiateAuth' \
+  -d "{\"AuthFlow\":\"USER_PASSWORD_AUTH\",\"ClientId\":\"${CLIENT_ID}\",\"AuthParameters\":{\"USERNAME\":\"admin@groov.local\",\"PASSWORD\":\"GroovLocal1!\"}}" \
+  | jq -r '.AuthenticationResult.IdToken')"
+
+# 3. Call a V2 route. The ID token is the RAW Authorization header value (no
+#    "Bearer " prefix) — byte-identical to what the browser shim sends.
+curl -sS "${API_BASE}/v2/getAllTempSensors" -H "Authorization: ${TOKEN}"
+```
+
+Notes:
+
+- The `Authorization` value is the **raw ID token**, no `Bearer` prefix — the
+  same thing the UI sends, and what the ported Python authorizer
+  (`functions/adminAuthorizer/adminAuthorizer.py`) verifies against Floci's JWKS.
+- Route paths (e.g. `/v2/getAllTempSensors`) join straight onto `API_BASE`,
+  which is `http://localhost:4566/execute-api/<API_ID>/dev`.
+- Admin-only routes (add/edit/delete/approve) require the **admin** token; a
+  `user@groov.local` token gets a **403** there — that's the authorizer working,
+  not a bug (see the split in the seeded-users list above).
 
 ## 7. Hot reload
 
@@ -312,6 +376,7 @@ regenerates its fingerprint into `groov-local-static`.
 ## 9. Everyday commands
 
 ```bash
+bash floci/dev.sh --help          # recommended launcher + all its flags (detach, user; §4)
 docker compose up                 # start (foreground); add -d to detach
 docker compose watch              # start with live UI source sync (see §7)
 docker compose down               # stop, KEEP volumes (data persists)

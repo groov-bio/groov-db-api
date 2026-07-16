@@ -19,3 +19,6 @@ scripts/s3_v2
 
 scripts/v2
 layers
+
+# floci/dev.sh --detach writes the background watcher's output here
+.floci-watch.log

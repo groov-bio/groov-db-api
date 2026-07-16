@@ -1029,7 +1029,10 @@ def get_or_create_authorizer(apigw, api_id, name, **kwargs):
 
 
 def reconcile_routes(apigw, lambda_client, api_id, routes, jwt_id, admin_id):
-    existing_route_keys = {r["RouteKey"] for r in apigw.get_routes(ApiId=api_id, MaxResults="200")["Items"]}
+    existing_routes = {
+        r["RouteKey"]: r
+        for r in apigw.get_routes(ApiId=api_id, MaxResults="200")["Items"]
+    }
     integration_by_uri = {
         i["IntegrationUri"]: i["IntegrationId"]
         for i in apigw.get_integrations(ApiId=api_id, MaxResults="200")["Items"]
@@ -1050,17 +1053,50 @@ def reconcile_routes(apigw, lambda_client, api_id, routes, jwt_id, admin_id):
             integration_id = resp["IntegrationId"]
             integration_by_uri[fn_arn] = integration_id
 
-        if route_key not in existing_route_keys:
-            kwargs = {"ApiId": api_id, "RouteKey": route_key, "Target": f"integrations/{integration_id}"}
-            if route["auth"] == "JWT":
-                kwargs.update(AuthorizationType="JWT", AuthorizerId=jwt_id)
-            elif route["auth"] == "ADMIN":
-                kwargs.update(AuthorizationType="CUSTOM", AuthorizerId=admin_id)
-            apigw.create_route(**kwargs)
-            existing_route_keys.add(route_key)
-            print(f"  created route {route_key} -> {fn} ({route['auth']})")
+        target = f"integrations/{integration_id}"
+        if route["auth"] == "JWT":
+            want_auth_type, want_auth_id = "JWT", jwt_id
+        elif route["auth"] == "ADMIN":
+            want_auth_type, want_auth_id = "CUSTOM", admin_id
         else:
-            print(f"  route {route_key} already exists, skipping")
+            want_auth_type, want_auth_id = "NONE", None
+
+        existing = existing_routes.get(route_key)
+        if existing is None:
+            kwargs = {"ApiId": api_id, "RouteKey": route_key, "Target": target}
+            if want_auth_type != "NONE":
+                kwargs.update(AuthorizationType=want_auth_type, AuthorizerId=want_auth_id)
+            apigw.create_route(**kwargs)
+            print(f"  created route {route_key} -> {fn} ({route['auth']})")
+        elif (
+            existing.get("Target") != target
+            or existing.get("AuthorizationType", "NONE") != want_auth_type
+            or (want_auth_type != "NONE" and existing.get("AuthorizerId") != want_auth_id)
+        ):
+            # Re-target/re-auth a DRIFTED existing route. The old code skipped
+            # every route that already existed, so after a function rename the
+            # route kept pointing at the stale (now empty/removed) Lambda
+            # forever. Real `sam deploy`/CloudFormation reconciles this; so do we.
+            update_kwargs = {
+                "ApiId": api_id, "RouteId": existing["RouteId"],
+                "Target": target, "AuthorizationType": want_auth_type,
+            }
+            if want_auth_type != "NONE":
+                update_kwargs["AuthorizerId"] = want_auth_id
+            try:
+                apigw.update_route(**update_kwargs)
+                print(f"  re-targeted route {route_key} -> {fn} ({route['auth']})")
+            except ClientError as e:
+                # Fall back to a clean recreate if update_route can't reconcile
+                # the change (e.g. clearing an authorizer).
+                apigw.delete_route(ApiId=api_id, RouteId=existing["RouteId"])
+                create_kwargs = {"ApiId": api_id, "RouteKey": route_key, "Target": target}
+                if want_auth_type != "NONE":
+                    create_kwargs.update(AuthorizationType=want_auth_type, AuthorizerId=want_auth_id)
+                apigw.create_route(**create_kwargs)
+                print(f"  recreated route {route_key} -> {fn} ({route['auth']}) [{type(e).__name__}]")
+        else:
+            print(f"  route {route_key} already correct, skipping")
 
         if fn not in permissioned:
             permissioned.add(fn)
@@ -1072,6 +1108,61 @@ def reconcile_routes(apigw, lambda_client, api_id, routes, jwt_id, admin_id):
                 )
             except lambda_client.exceptions.ResourceConflictException:
                 pass
+
+
+def prune_orphans(apigw, lambda_client, api_id, manifest):
+    """Delete Floci resources no longer in the derived manifest: orphaned
+    routes, their now-unreferenced integrations, and out-of-scope Lambda
+    functions (e.g. left behind after a rename). Mirrors CloudFormation's
+    delete/replace semantics, which the create/update-only reconcile above
+    lacks. Off by default -- run `floci-init --prune`.
+
+    Order is routes -> integrations -> functions: APIGW won't delete an
+    integration that still has routes, and a function shouldn't be removed
+    while a route still targets it. reconcile_routes has already re-pointed the
+    live routes at the current integrations by the time this runs, so a stale
+    integration/function is genuinely unreferenced here.
+
+    Safe because every function/route/integration in this local stack is
+    provisioner-created (a fresh Floci emulator has no user-made Lambdas)."""
+    keep_route_keys = {f"{r['method']} {r['path']}" for r in manifest["routes"]}
+    keep_integration_uris = {
+        f"arn:aws:lambda:{API_REGION}:000000000000:function:{r['function']}"
+        for r in manifest["routes"]
+    }
+    keep_fn_names = {
+        manifest["functions"][lid]["function_name"]
+        for lid in manifest["scope"]["all_functions"]
+    }
+    keep_fn_names.add(manifest["authorizers"]["admin"]["function_name"])
+
+    pruned = 0
+
+    for r in apigw.get_routes(ApiId=api_id, MaxResults="200")["Items"]:
+        if r["RouteKey"] not in keep_route_keys:
+            apigw.delete_route(ApiId=api_id, RouteId=r["RouteId"])
+            print(f"  pruned route {r['RouteKey']}")
+            pruned += 1
+
+    for i in apigw.get_integrations(ApiId=api_id, MaxResults="200")["Items"]:
+        if i.get("IntegrationUri") not in keep_integration_uris:
+            try:
+                apigw.delete_integration(ApiId=api_id, IntegrationId=i["IntegrationId"])
+                print(f"  pruned integration -> {i.get('IntegrationUri')}")
+                pruned += 1
+            except ClientError as e:
+                print(f"  skipped integration {i['IntegrationId']} ({type(e).__name__})")
+
+    existing_fn_names = []
+    for page in lambda_client.get_paginator("list_functions").paginate():
+        existing_fn_names += [f["FunctionName"] for f in page["Functions"]]
+    for name in existing_fn_names:
+        if name not in keep_fn_names:
+            lambda_client.delete_function(FunctionName=name)
+            print(f"  pruned function {name}")
+            pruned += 1
+
+    print(f"  prune complete ({pruned} resource(s) removed)")
 
 
 def ensure_stage(apigw, api_id):
@@ -1102,7 +1193,7 @@ def make_client(boto3, service, region, endpoint_url):
     return boto3.client(service, region_name=region, endpoint_url=endpoint_url)
 
 
-def apply():
+def apply(prune=False):
     import boto3
 
     endpoint_url = os.environ["AWS_ENDPOINT_URL"]
@@ -1187,6 +1278,9 @@ def apply():
         pass
 
     reconcile_routes(apigw, lambda_client, api_id, manifest["routes"], jwt_id, admin_id)
+    if prune:
+        print("--- Pruning orphaned resources (--prune) ---")
+        prune_orphans(apigw, lambda_client, api_id, manifest)
     ensure_stage(apigw, api_id)
 
     api_base, content = write_ui_env(Path("/shared"), api_id, pool_id, client_id)
@@ -1249,6 +1343,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", action="store_true", help="Print the derived manifest only; no AWS calls.")
     parser.add_argument("--reseed", action="store_true", help="Wipe+reseed tables/buckets only.")
+    parser.add_argument(
+        "--prune", action="store_true",
+        help="After provisioning, delete Floci resources (routes, integrations, "
+             "Lambdas) no longer in template.yaml -- mirrors CloudFormation "
+             "delete/replace. Off by default.",
+    )
     args = parser.parse_args()
 
     if args.plan:
@@ -1267,7 +1367,7 @@ def main():
     if not HOST_API_DIR:
         raise SystemExit("HOST_API_DIR must be set (absolute host path to the repo root)")
     wait_for_floci(endpoint_url)
-    apply()
+    apply(prune=args.prune)
 
 
 if __name__ == "__main__":
