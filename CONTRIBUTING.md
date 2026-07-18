@@ -89,13 +89,10 @@ git remote add upstream https://github.com/original-org/groov-db-api.git
 
 # Install dependencies
 npm install
-cd layers/node && npm install && cd ../..
-cd layers/python && pip3 install -r requirements.txt -t ./python && cd ../..
 cd scripts && npm install && cd ..
 
-# Set up local environment
-chmod +x ./setup-local-complete.sh
-./setup-local-complete.sh
+# Start the local stack (Floci — see LOCAL_DEV.md for the full guide)
+bash floci/dev.sh
 ```
 
 ### Making Changes
@@ -119,9 +116,9 @@ chmod +x ./setup-local-complete.sh
    # Test specific function
    npm test -- --testNamePattern="functionName"
 
-   # Run local API
-   sam local start-api --env-vars .env.json
-   
+   # Run the local API stack (Floci — see LOCAL_DEV.md)
+   docker compose up
+
    # Test endpoints with Bruno or curl
    ```
 

@@ -19,7 +19,15 @@ def invoke_fingerprint_async(payload):
     if not fn_name:
         print("FINGERPRINT_LAMBDA_NAME not set, skipping fingerprint invocation")
         return
-    lambda_client = boto3.client("lambda", region_name="us-east-2")
+    # No region_name override for IS_LOCAL: Floci scopes Lambda functions (like
+    # DynamoDB tables) per-region, and the local updateFingerprintV2 function is
+    # deployed in whatever region the Lambda runtime's own AWS_REGION reports
+    # (us-east-1 in this stack) -- hardcoding "us-east-2" here would target a
+    # region where the local function doesn't exist and the invoke would silently
+    # no-op the fingerprint pipeline. Prod is unaffected (its account's Lambda
+    # functions really do live in us-east-2).
+    kwargs = {} if os.environ.get("IS_LOCAL") else {"region_name": "us-east-2"}
+    lambda_client = boto3.client("lambda", **kwargs)
     lambda_client.invoke(
         FunctionName=fn_name,
         InvocationType="Event",

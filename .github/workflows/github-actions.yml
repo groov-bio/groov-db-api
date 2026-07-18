@@ -39,6 +39,68 @@ jobs:
     - name: Run Python V2 unit tests
       run: python -m unittest discover -s tests/unit -p "test_*.py"
 
+    - name: Setup SAM
+      uses: aws-actions/setup-sam@v2
+      with:
+        use-installer: true
+
+    - name: Install cfn-lint
+      run: pip install cfn-lint pyyaml
+
+    - name: sam validate --lint
+      # `--lint` runs cfn-lint locally instead of calling the CloudFormation
+      # ValidateTemplate API, so no AWS credentials are needed here. The
+      # existing template.yaml may already produce lint warnings/errors -
+      # this step is intentionally non-blocking (continue-on-error) until
+      # those findings have been triaged and it's safe to make it a real
+      # gate. See the PR description for what it currently surfaces.
+      run: sam validate --lint
+      continue-on-error: true
+
+    - name: cfn-lint template.yaml
+      # Direct cfn-lint invocation (in addition to `sam validate --lint`)
+      # for its fuller default rule set and standalone output. Also
+      # non-blocking for now, same reasoning as above.
+      run: cfn-lint template.yaml
+      continue-on-error: true
+
+    - name: IAM parity heuristic check
+      # Static, template-only check (no AWS/Docker calls) that flags
+      # AWS::Serverless::Function resources whose Environment variables
+      # reference a resource (table/bucket/lambda) with no matching grant
+      # in that function's Policies block. It's a heuristic with known
+      # false-positive classes - see scripts/check_iam_parity.py's module
+      # docstring. Non-blocking until findings are triaged.
+      run: python scripts/check_iam_parity.py
+      continue-on-error: true
+
+  smoke:
+    runs-on: ubuntu-latest
+    needs: test
+    # GATED OFF FOR NOW: floci/smoke.sh stands up the local Floci/LocalStack
+    # stack and exercises it over HTTP, but the local Lambda layers/functions
+    # are built for arm64 (see template.yaml Architectures) while GitHub's
+    # ubuntu-latest runners are x86_64. Cross-arch Lambda emulation under
+    # LocalStack on an x86_64 runner is not yet verified to work (multi-arch
+    # CI support is tracked as a separate, parallel workstream). Flip this
+    # `if: false` once that lands - until then, run floci/smoke.sh manually
+    # against a local stack.
+    if: false
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Bring up local stack
+      run: docker compose up -d --wait
+
+    - name: Run smoke tests
+      run: bash floci/smoke.sh
+
+    - name: Tear down local stack
+      if: always()
+      run: docker compose down -v
+
   deploy:
     runs-on: ubuntu-latest
     if: github.event_name == 'push'

@@ -34,9 +34,10 @@ def _table(name):
     """Lazily build a DynamoDB Table resource. Patch this in tests."""
     global _dynamodb
     if _dynamodb is None:
+        # No endpoint_url override for IS_LOCAL: boto3 auto-targets the
+        # Floci-injected AWS_ENDPOINT_URL env var when present inside the
+        # Lambda container. Prod is unaffected (that env var is unset there).
         kwargs = {"region_name": "us-east-2"}
-        if os.environ.get("IS_LOCAL"):
-            kwargs["endpoint_url"] = "http://host.docker.internal:8000"
         _dynamodb = boto3.resource("dynamodb", **kwargs)
     return _dynamodb.Table(name)
 
@@ -76,7 +77,6 @@ def lambda_handler(event, context=None):
                 "headers": cors,
                 "body": json.dumps({"message": "Processed sensor not found"}),
             }
-        return {"statusCode": 204, "headers": cors}
     except Exception as err:  # noqa: BLE001
         print(err)
         return {
@@ -84,3 +84,19 @@ def lambda_handler(event, context=None):
             "headers": cors,
             "body": json.dumps({"message": "Error rejecting V2 processed sensor"}),
         }
+
+    # Also remove the raw staged submission (PK="TEMP", SK=submissionUUID) that
+    # insertFormV2 wrote to the staging table, mirroring approveProcessedSensorV2's
+    # cleanup — otherwise a rejected sensor's staged row lingers in
+    # getAllTempSensorsV2 forever. Best-effort: the processed row is already gone,
+    # so a staging-cleanup failure must not turn a successful reject into a 500.
+    temp_table_name = os.environ.get("TEMP_TABLE_V2_NAME")
+    if temp_table_name:
+        try:
+            _table(temp_table_name).delete_item(
+                Key={"PK": "TEMP", "SK": submission_uuid}
+            )
+        except Exception as err:  # noqa: BLE001
+            print("Failed to delete staged temp row (processed row already rejected):", err)
+
+    return {"statusCode": 204, "headers": cors}

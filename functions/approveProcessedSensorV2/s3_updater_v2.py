@@ -15,13 +15,11 @@ V2_PREFIX = "v2/"
 
 def _s3_client():
     if os.environ.get("IS_LOCAL"):
-        return boto3.client(
-            "s3",
-            region_name="us-east-2",
-            endpoint_url="http://host.docker.internal:9090",
-            aws_access_key_id="test",
-            aws_secret_access_key="test",
-        )
+        # No endpoint_url override: boto3 auto-targets the Floci-injected
+        # AWS_ENDPOINT_URL env var, and credentials come from the Lambda
+        # runtime's own credential provider (also Floci-injected) — same
+        # pattern as the DynamoDB clients in this codebase.
+        return boto3.client("s3", region_name="us-east-2")
     return boto3.client(
         "s3",
         region_name="auto",

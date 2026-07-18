@@ -24,8 +24,29 @@ def base_event(**overrides):
 class TestRejectProcessedSensorV2(unittest.TestCase):
     def setUp(self):
         os.environ["PROCESSED_TEMP_TABLE_V2_NAME"] = "test-processed-v2-table"
-        self.table = mock.MagicMock()
-        self._patch = mock.patch.object(h, "_table", return_value=self.table)
+        os.environ["TEMP_TABLE_V2_NAME"] = "test-temp-v2-table"
+
+        self.processed_table = mock.MagicMock()
+        self.temp_table = mock.MagicMock()
+        # Default: the processed row exists so the happy path reaches staging cleanup.
+        self.processed_table.delete_item.return_value = {
+            "Attributes": {"PK": "PROCESSED", "SK": "uuid-1", "data": {}}
+        }
+        self.temp_table.delete_item.return_value = {}
+
+        # Capture table names now so the factory keeps mapping correctly even in
+        # tests that pop an env var to exercise the "env unset" path.
+        processed_name = os.environ["PROCESSED_TEMP_TABLE_V2_NAME"]
+        temp_name = os.environ["TEMP_TABLE_V2_NAME"]
+
+        def table_side_effect(name):
+            if name == processed_name:
+                return self.processed_table
+            if name == temp_name:
+                return self.temp_table
+            return mock.MagicMock()
+
+        self._patch = mock.patch.object(h, "_table", side_effect=table_side_effect)
         self._patch.start()
         self.addCleanup(self._patch.stop)
 
@@ -57,24 +78,50 @@ class TestRejectProcessedSensorV2(unittest.TestCase):
         self.assertIn("submissionUUID", json.loads(res["body"])["message"])
 
     def test_204_on_successful_delete_and_uses_the_processed_key(self):
-        self.table.delete_item.return_value = {"Attributes": {"PK": "PROCESSED", "SK": "uuid-1", "data": {}}}
         res = h.lambda_handler(base_event())
         self.assertEqual(res["statusCode"], 204)
         self.assertNotIn("body", res)
-        self.table.delete_item.assert_called_with(
+        self.processed_table.delete_item.assert_called_with(
             Key={"PK": "PROCESSED", "SK": "uuid-1"}, ReturnValues="ALL_OLD"
         )
 
-    def test_404_when_no_row_was_deleted(self):
-        self.table.delete_item.return_value = {}
+    def test_204_also_deletes_the_staged_temp_row(self):
+        # Rejecting must remove the raw staged submission (PK="TEMP") too, so a
+        # rejected sensor stops appearing in getAllTempSensorsV2 — matching approve.
+        res = h.lambda_handler(base_event())
+        self.assertEqual(res["statusCode"], 204)
+        self.temp_table.delete_item.assert_called_once_with(
+            Key={"PK": "TEMP", "SK": "uuid-1"}
+        )
+
+    def test_204_even_when_staged_temp_delete_throws(self):
+        # Staging cleanup is best-effort: the processed row is already gone, so a
+        # failure deleting the staged row must not turn a completed reject into 500.
+        self.temp_table.delete_item.side_effect = Exception("staged delete boom")
+        res = h.lambda_handler(base_event())
+        self.assertEqual(res["statusCode"], 204)
+
+    def test_404_when_no_row_was_deleted_skips_staging_cleanup(self):
+        self.processed_table.delete_item.return_value = {}
         res = h.lambda_handler(base_event())
         self.assertEqual(res["statusCode"], 404)
         self.assertIn("not found", json.loads(res["body"])["message"].lower())
+        # No processed row existed, so we return 404 before touching the staging table.
+        self.temp_table.delete_item.assert_not_called()
 
     def test_500_when_dynamo_throws(self):
-        self.table.delete_item.side_effect = Exception("boom")
+        self.processed_table.delete_item.side_effect = Exception("boom")
         res = h.lambda_handler(base_event())
         self.assertEqual(res["statusCode"], 500)
+        self.temp_table.delete_item.assert_not_called()
+
+    def test_204_skips_staged_delete_when_temp_table_env_unset(self):
+        # Older stacks without TEMP_TABLE_V2_NAME wired must not crash — the
+        # staged cleanup is skipped rather than targeting a null table.
+        os.environ.pop("TEMP_TABLE_V2_NAME", None)
+        res = h.lambda_handler(base_event())
+        self.assertEqual(res["statusCode"], 204)
+        self.temp_table.delete_item.assert_not_called()
 
 
 if __name__ == "__main__":

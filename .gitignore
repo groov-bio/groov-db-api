@@ -2,13 +2,13 @@
 functions/.env
 **/python/python
 layers/python-v2/python
+layers/rdkit/python
+layers/*/layer.zip
 .aws-sam
-.env.json
 **/.env
 **/.DS_Store
 scripts/node_modules
 s3
-env.json
 **/coverage/**
 **/__pycache__/**
 TODO.md
@@ -19,3 +19,6 @@ scripts/s3_v2
 
 scripts/v2
 layers
+
+# floci/dev.sh --detach writes the background watcher's output here
+.floci-watch.log

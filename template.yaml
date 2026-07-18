@@ -695,6 +695,7 @@ Resources:
       Environment:
         Variables:
           PROCESSED_TEMP_TABLE_V2_NAME: !Ref GroovTempTableV2Processed
+          TEMP_TABLE_V2_NAME: !Ref GroovTempTableV2
           PROD_TABLE_V2_NAME: groov_db_table_v2
           ENV: !Ref Env
           R2_BUCKET_NAME: !Ref R2BucketName
@@ -724,6 +725,8 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref GroovTempTableV2Processed
         - DynamoDBCrudPolicy:
+            TableName: !Ref GroovTempTableV2
+        - DynamoDBCrudPolicy:
             TableName: groov_db_table_v2
         - Statement:
             - Effect: Allow
@@ -743,6 +746,7 @@ Resources:
       Environment:
         Variables:
           PROCESSED_TEMP_TABLE_V2_NAME: !Ref GroovTempTableV2Processed
+          TEMP_TABLE_V2_NAME: !Ref GroovTempTableV2
           ENV: !Ref Env
       Architectures:
         - arm64
@@ -764,6 +768,8 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref GroovTempTableV2Processed
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GroovTempTableV2
 
   DeleteSensorV2Function:
     Type: AWS::Serverless::Function

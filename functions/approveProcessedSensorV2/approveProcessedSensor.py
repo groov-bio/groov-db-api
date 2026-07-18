@@ -62,9 +62,10 @@ _dynamodb = None
 def _table(name):
     global _dynamodb
     if _dynamodb is None:
+        # No endpoint_url override for IS_LOCAL: boto3 auto-targets the
+        # Floci-injected AWS_ENDPOINT_URL env var when present inside the
+        # Lambda container. Prod is unaffected (that env var is unset there).
         kwargs = {"region_name": "us-east-2"}
-        if os.environ.get("IS_LOCAL"):
-            kwargs["endpoint_url"] = "http://host.docker.internal:8000"
         _dynamodb = boto3.resource("dynamodb", **kwargs)
     return _dynamodb.Table(name)
 
@@ -94,6 +95,7 @@ def lambda_handler(event, context=None):
 
     processed_table_name = os.environ.get("PROCESSED_TEMP_TABLE_V2_NAME")
     prod_table_name = os.environ.get("PROD_TABLE_V2_NAME")
+    temp_table_name = os.environ.get("TEMP_TABLE_V2_NAME")
 
     # Processed-temp rows are keyed PK="PROCESSED", SK=submissionUUID (see addNewSensorV2).
     # The category is carried on the row's data blob, not the key.
@@ -230,6 +232,20 @@ def lambda_handler(event, context=None):
         )
     except Exception as err:
         print("Failed to delete processed-temp row (prod write succeeded):", err)
+
+    # Also remove the raw staged submission (PK="TEMP", SK=submissionUUID) that
+    # insertFormV2 wrote to the staging table — otherwise it lingers in
+    # getAllTempSensorsV2 forever after promotion (V1's approve cleaned this row
+    # up in the same batch). Best-effort: the prod write already succeeded, so a
+    # cleanup failure must not fail the request. The edit branch has no staged
+    # row to remove (editSensorV2 writes straight to the processed table).
+    if temp_table_name:
+        try:
+            _table(temp_table_name).delete_item(
+                Key={"PK": "TEMP", "SK": submission_uuid}
+            )
+        except Exception as err:
+            print("Failed to delete staged temp row (prod write succeeded):", err)
 
     try:
         s3_updater_v2.regenerate_static_json(data, prod_category, grv_id)

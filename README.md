@@ -52,103 +52,27 @@ Since this is an open-source version, you'll need to obtain your own biosensor d
 
 Extract any downloaded data to the `scripts/s3/` directory to match the expected file structure.
 
-### 2. Quick Setup with Complete Script
+### 2. Run the Local Stack
 
-The fastest way to get started:
-
-```bash
-chmod +x ./setup-local-complete.sh
-./setup-local-complete.sh
-```
-
-This script will:
-- Check dependencies
-- Start local DynamoDB and S3 services
-- Create required database tables
-- Process any data in `scripts/s3/` directory
-- Generate molecular fingerprints (if RDKit is available)
-- Optionally start the API server
-
-### 3. Manual Setup
-
-If you prefer manual setup or need to troubleshoot:
-
-#### Environment Configuration
-
-Create `.env.json` in the root directory:
-
-```json
-{
-  "SearchFunction": {
-    "TEMP_TABLE_NAME": "groov-api-temp-table",
-    "TABLE_NAME": "groov-api-table",
-    "ENV": "dev",
-    "IS_LOCAL": "true",
-    "USER_POOL_ID": "YOUR_USER_POOL_ID",
-    "USER_POOL_CLIENT_ID": "YOUR_USER_POOL_CLIENT_ID"
-  }
-}
-```
-
-#### Install Dependencies
+Local development runs on **Floci**, a single-command offline emulation of the
+V2 API (API Gateway, Lambda, Cognito, DynamoDB, S3) plus the `groov-db-ui`
+frontend, with Lambda code hot-reloaded straight from `functions/`:
 
 ```bash
-# Install root dependencies
-npm install
-
-# Install Node.js layer dependencies
-cd layers/node && npm install && cd ../..
-
-# Install Python layer dependencies
-cd layers/python && pip3 install -r requirements.txt -t ./python && cd ../..
-
-# Install script dependencies
-cd scripts && npm install && cd ..
+# from the repo root:
+bash floci/dev.sh     # build + provision, then watch (recommended)
+# or:
+docker compose up     # start everything (add -d to detach)
 ```
 
-#### Start Local Services
+- UI: http://localhost:3000
+- Floci (AWS endpoint): http://localhost:4566
 
-```bash
-# Start DynamoDB and S3 mock services
-docker-compose up -d
+Local is **V2-only / Python-only** — V1 / Node functions are not provisioned
+locally, and production (`template.yaml` + the real AWS deploy) is untouched.
 
-# Create local tables
-npm run setup:tables
-
-# Process any existing data files
-cd scripts && node createIndex.js && cd ..
-
-# Generate molecular fingerprints (requires RDKit)
-cd scripts && python3 createFingerprint.py --upload && cd ..
-```
-
-## Running the API
-
-### Development Mode
-
-```bash
-# Start the API with hot reloading
-sam local start-api --env-vars .env.json --warm-containers EAGER --skip-pull-image
-```
-
-The API will be available at `http://localhost:3000`
-
-### Using npm Scripts
-
-```bash
-# Start local services
-npm run dynamo:start
-npm run s3:start
-
-# Setup database tables
-npm run setup:tables
-
-# Start the API
-npm run sam:start
-
-# Stop all services
-npm run stop:local
-```
+**See [LOCAL_DEV.md](LOCAL_DEV.md) for the full guide** — prerequisites, the
+provisioner, seeding/reseeding, login, and troubleshooting.
 
 ## API Endpoints
 
@@ -343,8 +267,8 @@ The `bruno/` directory contains API test collections. Import into Bruno for comp
 ### Common Issues
 
 1. **Docker not starting**: Ensure Docker Desktop is running
-2. **SAM build fails**: Check Node.js version (requires 20+)
-3. **DynamoDB connection issues**: Verify local DynamoDB is running on port 8000
+2. **Local stack issues**: See the troubleshooting section in [LOCAL_DEV.md](LOCAL_DEV.md)
+3. **Local endpoint**: The Floci AWS endpoint is served on port 4566 (`http://localhost:4566`)
 4. **Missing fingerprints**: Install RDKit and run fingerprint generation
 5. **CORS errors**: Check API Gateway configuration in template.yaml
 6. **No data found**: Download sample data from groov.bio or add your own data to `scripts/s3/`
@@ -356,9 +280,10 @@ View logs for debugging:
 # CloudWatch logs (production)
 sam logs -n AddNewSensorV2Function --stack-name your-stack-name --tail
 
-# Local logs
-docker-compose logs dynamodb-local
-docker-compose logs s3-local
+# Local logs (Floci stack)
+docker compose logs -f floci        # AWS emulator
+docker compose logs -f floci-init   # one-shot provisioner
+docker compose logs -f ui           # frontend dev server
 ```
 
 ## Contributing
