@@ -398,12 +398,12 @@ Resources:
       Timeout: 120
       FunctionName: !Sub ${Env}-ligand-search-function
       Environment:
+        # ligandSearch.py only reads the R2 (fingerprint store) vars. The V1
+        # env (USER_POOL_ID/USER_POOL_CLIENT_ID/TEMP_TABLE_NAME/TABLE_NAME/ENV)
+        # was vestigial — the handler never touched it — and is dropped as part
+        # of finishing the V2 migration. Locally, Floci swaps the R2_* block for
+        # S3_BUCKET_NAME (see floci/provisioner.py R2_OVERLAY).
         Variables:
-          USER_POOL_ID: !Ref UserPoolId
-          USER_POOL_CLIENT_ID: !Ref UserPoolClientId
-          TEMP_TABLE_NAME: !Ref TempTableName
-          TABLE_NAME: !Ref TableName
-          ENV: !Ref Env
           R2_BUCKET_NAME: !Ref R2BucketName
           R2_ACCESS_KEY_ID: !Ref R2AccessKeyId
           R2_SECRET_ACCESS_KEY: !Ref R2SecretAccessKey
@@ -411,6 +411,22 @@ Resources:
       Architectures:
         - x86_64
       Events:
+        # Canonical V2 route — consistent with every other V2 function
+        # (/v2/*). This is the path the FE calls and the one the Floci local
+        # stack scopes in. The legacy unprefixed routes below are retained so
+        # the old prod path keeps answering until nothing depends on it.
+        V2ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/ligandSearch
+            Method: post
+        V2OptionsApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref GroovApi
+            Path: /v2/ligandSearch
+            Method: options
         ApiEvent:
           Type: HttpApi
           Properties:

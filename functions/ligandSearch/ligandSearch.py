@@ -12,15 +12,20 @@ from rdkit.DataStructs import BulkTanimotoSimilarity, TanimotoSimilarity, Explic
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+# V2 fingerprints live under the v2/ key prefix on R2 (written by
+# updateFingerprintV2), matching the rest of the V2 statics. The bucket root
+# still holds the retired V1 fingerprints (keyed by UniProt id), so every key
+# this reader touches must carry the v2/ prefix.
+V2_PREFIX = "v2/"
+
 # S3 client setup with R2 support
 if os.environ.get('IS_LOCAL'):
-    s3_client = boto3.client('s3', 
-        region_name=os.environ.get('AWS_REGION', 'us-east-2'),
-        endpoint_url=os.environ.get('S3_ENDPOINT'),
-        aws_access_key_id='test',
-        aws_secret_access_key='test'
-    )
-    BUCKET_NAME = os.environ.get('BUCKET_NAME')
+    # No endpoint_url override: boto3 auto-targets the Floci-injected
+    # AWS_ENDPOINT_URL env var, and credentials come from the Lambda runtime's
+    # own credential provider (also Floci-injected) -- same pattern as the
+    # other V2 S3 clients (s3_updater_v2, updateFingerprint).
+    s3_client = boto3.client('s3', region_name='us-east-2')
+    BUCKET_NAME = os.environ.get('S3_BUCKET_NAME') or 'my-test-bucket'
 else:
     s3_client = boto3.client('s3',
         region_name='auto',
@@ -68,7 +73,7 @@ def download_fingerprints():
         # Check if we can get the gzipped version first (more efficient)
         try:
             logger.info("Downloading compressed fingerprints file")
-            response = s3_client.get_object(Bucket=BUCKET_NAME, Key='fingerprints.json.gz')
+            response = s3_client.get_object(Bucket=BUCKET_NAME, Key=f'{V2_PREFIX}fingerprints.json.gz')
             compressed_data = response['Body'].read()
             
             # Decompress the data
@@ -79,7 +84,7 @@ def download_fingerprints():
             logger.warning(f"Failed to get compressed fingerprints, trying uncompressed: {e}")
             
             # Fall back to uncompressed version
-            response = s3_client.get_object(Bucket=BUCKET_NAME, Key='fingerprints.json')
+            response = s3_client.get_object(Bucket=BUCKET_NAME, Key=f'{V2_PREFIX}fingerprints.json')
             fingerprints_data = json.load(response['Body'])
             
         # Convert stored bit strings back to fingerprint objects
