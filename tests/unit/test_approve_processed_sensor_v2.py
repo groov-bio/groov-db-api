@@ -60,21 +60,32 @@ def conditional_check_failed():
 class ApproveProcessedSensorV2Test(unittest.TestCase):
     def setUp(self):
         os.environ["PROCESSED_TEMP_TABLE_V2_NAME"] = "test-processed-v2"
+        os.environ["TEMP_TABLE_V2_NAME"] = "test-temp-v2"
         os.environ["PROD_TABLE_V2_NAME"] = "groov_db_table_v2"
         os.environ["FINGERPRINT_LAMBDA_NAME"] = "test-fingerprint-v2"
 
         self.addCleanup(mock.patch.stopall)
 
         self.processed_table = mock.MagicMock()
+        self.temp_table = mock.MagicMock()
         self.prod_table = mock.MagicMock()
         self.processed_table.get_item.return_value = {}
         self.processed_table.delete_item.return_value = {}
+        self.temp_table.delete_item.return_value = {}
         self.prod_table.put_item.return_value = {}
 
+        # Capture table names now so the factory keeps mapping correctly even in
+        # tests that pop an env var to exercise the "env unset" path.
+        processed_name = os.environ["PROCESSED_TEMP_TABLE_V2_NAME"]
+        temp_name = os.environ["TEMP_TABLE_V2_NAME"]
+        prod_name = os.environ["PROD_TABLE_V2_NAME"]
+
         def table_side_effect(name):
-            if name == os.environ["PROCESSED_TEMP_TABLE_V2_NAME"]:
+            if name == processed_name:
                 return self.processed_table
-            if name == os.environ["PROD_TABLE_V2_NAME"]:
+            if name == temp_name:
+                return self.temp_table
+            if name == prod_name:
                 return self.prod_table
             return mock.MagicMock()
 
@@ -95,6 +106,9 @@ class ApproveProcessedSensorV2Test(unittest.TestCase):
 
     def _processed_delete_item(self):
         return self.processed_table.delete_item.call_args.kwargs
+
+    def _temp_delete_item(self):
+        return self.temp_table.delete_item.call_args.kwargs
 
     # ── module-level constants / helpers ──────────────────────────────────
 
@@ -189,6 +203,11 @@ class ApproveProcessedSensorV2Test(unittest.TestCase):
 
         delete_kwargs = self._processed_delete_item()
         self.assertEqual(delete_kwargs["Key"], {"PK": "PROCESSED", "SK": "uuid-1"})
+
+        # The raw staged submission (PK="TEMP") is also removed from the staging
+        # table so it stops showing up in getAllTempSensorsV2 after promotion.
+        temp_delete_kwargs = self._temp_delete_item()
+        self.assertEqual(temp_delete_kwargs["Key"], {"PK": "TEMP", "SK": "uuid-1"})
 
         self.mock_regen.assert_called_once()
         self.mock_invoke.assert_called_once()
@@ -341,6 +360,28 @@ class ApproveProcessedSensorV2Test(unittest.TestCase):
         res = h.lambda_handler(base_event())
         self.assertEqual(res["statusCode"], 200)
 
+    def test_200_even_when_staged_temp_delete_throws(self):
+        # Removing the staged row is best-effort cleanup after a successful prod
+        # write — a failure there must not turn a completed approval into an error.
+        self.processed_table.get_item.return_value = {
+            "Item": {"PK": "TetR", "SK": "uuid-1", "data": sample_data()}
+        }
+        self.temp_table.delete_item.side_effect = Exception("staged delete boom")
+        res = h.lambda_handler(base_event())
+        self.assertEqual(res["statusCode"], 200)
+        self.prod_table.put_item.assert_called_once()
+
+    def test_new_sensor_skips_staged_delete_when_temp_table_env_unset(self):
+        # Older stacks without TEMP_TABLE_V2_NAME wired must not crash — the
+        # staged cleanup is skipped entirely rather than targeting a null table.
+        os.environ.pop("TEMP_TABLE_V2_NAME", None)
+        self.processed_table.get_item.return_value = {
+            "Item": {"PK": "TetR", "SK": "uuid-1", "data": sample_data()}
+        }
+        res = h.lambda_handler(base_event())
+        self.assertEqual(res["statusCode"], 200)
+        self.temp_table.delete_item.assert_not_called()
+
     def test_200_even_when_r2_regen_throws(self):
         self.processed_table.get_item.return_value = {
             "Item": {"PK": "TetR", "SK": "uuid-1", "data": sample_data()}
@@ -405,6 +446,10 @@ class ApproveProcessedSensorV2Test(unittest.TestCase):
 
         delete_kwargs = self._processed_delete_item()
         self.assertEqual(delete_kwargs["Key"], {"PK": "PROCESSED", "SK": "EDIT#GRV-T00001"})
+
+        # Edits never pass through insertFormV2, so there is no PK="TEMP" staged
+        # row to clean up — the staging table must be left untouched.
+        self.temp_table.delete_item.assert_not_called()
 
         self.mock_regen.assert_called_once_with(edit_data, "TetR", "GRV-T00001")
         self.mock_invoke.assert_called_once_with(
