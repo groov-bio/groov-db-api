@@ -29,12 +29,13 @@ least one HttpApi Event whose Path starts with "/v2/", PLUS anything
 transitively reachable from those functions (and from the HttpApi's Auth
 block) via !Ref/!GetAtt. This is computed generically by walking Properties
 trees (see compute_scope) -- there is no hardcoded function list. It happens
-to pull in exactly: the 12 V2 route functions, AdminAuthorizerFunction (via
-GroovApi's Auth.AdminAuthorizer.FunctionArn), and UpdateFingerprintV2Function
-(via FINGERPRINT_LAMBDA_NAME on the approve/delete functions). V1/Node
-functions (docs, contactForm, ligandSearch, ligifyLigandSearch, ligifyBlast,
-getOperon) fall out naturally because they have no /v2/* route and nothing
-in scope references them.
+to pull in exactly: the V2 route functions (including LigandSearchFunction,
+which serves POST /v2/ligandSearch), AdminAuthorizerFunction (via GroovApi's
+Auth.AdminAuthorizer.FunctionArn), and UpdateFingerprintV2Function (via
+FINGERPRINT_LAMBDA_NAME on the approve/delete functions). The remaining V1/Node
+functions (docs, contactForm, ligifyLigandSearch, ligifyBlast, getOperon) fall
+out naturally because they have no /v2/* route and nothing in scope references
+them.
 
 LOCAL OVERLAY (the only places local semantics deliberately differ from
 template.yaml -- everything else is derived as-is)
@@ -54,16 +55,16 @@ template.yaml -- everything else is derived as-is)
     mirror created updateFingerprintV2 as arm64 when the template says
     x86_64 -- it must be host-arch locally).
   - Layers: PythonV2Layer -> locally-published groov-python-v2-deps.
-    UpdateFingerprintV2Function's template Layers entry (!Ref PythonLayer)
-    is overridden to the local rdkit stand-in (groov-rdkit) instead --
-    the generic prod PythonLayer content isn't what a local rdkit build
-    needs. Prod PythonLayer/NodeLayer are otherwise NOT provisioned (their
-    other consumers -- docs, contactForm, getOperon, ligandSearch,
+    UpdateFingerprintV2Function's and LigandSearchFunction's template Layers
+    entry (!Ref PythonLayer) is overridden to the local rdkit stand-in
+    (groov-rdkit) instead -- the generic prod PythonLayer content isn't what a
+    local rdkit build needs. Prod PythonLayer/NodeLayer are otherwise NOT
+    provisioned (their other consumers -- docs, contactForm, getOperon,
     ligifyLigandSearch -- are out of scope).
   - R2 -> S3 stand-in: the template's R2_* env vars have no local
-    counterpart. For ApproveProcessedSensorV2Function and
-    DeleteSensorV2Function, the four R2_* vars are dropped and
-    S3_BUCKET_NAME=groov-local-static is added. For
+    counterpart. For ApproveProcessedSensorV2Function,
+    DeleteSensorV2Function and LigandSearchFunction, the four R2_* vars are
+    dropped and S3_BUCKET_NAME=groov-local-static is added. For
     UpdateFingerprintV2Function, the four R2_* vars are dropped and
     BUCKET_NAME=groov-local-static is added (yes, a different var name --
     that's what updateFingerprint.py reads).
@@ -146,17 +147,20 @@ LAYER_DEFS = {
         "layer_name": "groov-rdkit",
         "zip_path": "layers/rdkit/layer.zip",
         "compatible_runtimes": ["python3.12"],
-        "description": "rdkit+numpy+Pillow (host-arch manylinux wheels) for updateFingerprintV2",
+        "description": "rdkit+numpy+Pillow (host-arch manylinux wheels) for updateFingerprintV2 and ligandSearch",
         "staged_via_s3": True,   # zip is >50MB, over the Lambda API's direct-upload limit
     },
 }
 
-# Named local-overlay exceptions: these two functions' template Layers refs
-# (NodeLayer, PythonLayer respectively) are deliberately NOT what gets
-# attached locally -- see module docstring.
+# Named local-overlay exceptions: these functions' template Layers refs
+# (NodeLayer / PythonLayer) are deliberately NOT what gets attached locally --
+# see module docstring. LigandSearchFunction and UpdateFingerprintV2Function
+# both carry !Ref PythonLayer in the template but need the local rdkit
+# stand-in, not the generic prod python layer.
 FUNCTION_LAYER_OVERRIDE = {
     "AdminAuthorizerFunction": ["PythonV2Layer"],
     "UpdateFingerprintV2Function": ["__RDKIT__"],
+    "LigandSearchFunction": ["__RDKIT__"],
 }
 
 R2_ENV_KEYS = {"R2_BUCKET_NAME", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_ENDPOINT"}
@@ -166,6 +170,7 @@ R2_OVERLAY = {
     "ApproveProcessedSensorV2Function": {"S3_BUCKET_NAME": STATIC_BUCKET},
     "DeleteSensorV2Function": {"S3_BUCKET_NAME": STATIC_BUCKET},
     "UpdateFingerprintV2Function": {"BUCKET_NAME": STATIC_BUCKET},
+    "LigandSearchFunction": {"S3_BUCKET_NAME": STATIC_BUCKET},
 }
 
 PLAN_PLACEHOLDERS = {
